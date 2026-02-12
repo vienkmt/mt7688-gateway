@@ -1,7 +1,22 @@
 use crate::config::Config;
+use crate::network_config::{NetworkConfig, NetworkMode, NetworkStatus};
+
+/// Escape HTML special characters
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
 
 /// Render the configuration page HTML with current config values
-pub fn render_config_page(config: &Config, saved: bool) -> String {
+pub fn render_config_page(
+    config: &Config,
+    net_config: &NetworkConfig,
+    net_status: &NetworkStatus,
+    saved: bool,
+    net_errors: &[String],
+) -> String {
     let mqtt_checked = if config.mqtt.enabled { "checked" } else { "" };
     let tls_checked = if config.mqtt.tls { "checked" } else { "" };
     let http_checked = if config.http.enabled { "checked" } else { "" };
@@ -15,10 +30,20 @@ pub fn render_config_page(config: &Config, saved: bool) -> String {
         })
         .collect::<Vec<_>>()
         .join("");
-    let saved_msg = if saved {
-        r#"<div class="toast">Đã lưu cấu hình! Đang kết nối lại...</div>"#
+    // Network config
+    let dhcp_checked = if net_config.mode == NetworkMode::Dhcp { "checked" } else { "" };
+    let static_checked = if net_config.mode == NetworkMode::Static { "checked" } else { "" };
+    let static_display = if net_config.mode == NetworkMode::Static { "block" } else { "none" };
+    let status_color = if net_status.is_up { "#4CAF50" } else { "#f44336" };
+    let status_text = if net_status.is_up { "UP" } else { "DOWN" };
+
+    let saved_msg = if saved && net_errors.is_empty() {
+        r#"<div class="toast">Đã lưu cấu hình!</div>"#.to_string()
+    } else if !net_errors.is_empty() {
+        let errs: String = net_errors.iter().map(|e| format!("<li>{}</li>", html_escape(e))).collect();
+        format!(r#"<div class="toast" style="background:#f8d7da;color:#721c24"><ul style="margin:0;padding-left:20px;text-align:left">{}</ul></div>"#, errs)
     } else {
-        ""
+        String::new()
     };
 
     format!(
@@ -117,23 +142,72 @@ input[type=checkbox] {{ width: 18px; height: 18px; accent-color: #667eea; }}
 <h3>Chung</h3>
 <div class="row"><label>Chu kỳ:</label><input type="number" name="interval" value="{interval}" min="1" max="3600"> <span style="margin-left:8px;color:#666">giây</span></div>
 
+<h3>Mạng WAN (eth0.2) <span style="padding:2px 8px;border-radius:10px;font-size:11px;color:white;background:{status_color}">{status_text}</span></h3>
+<div class="row">
+<label>Chế độ:</label>
+<div style="display:flex;gap:16px">
+<label style="flex:0"><input type="radio" name="net_mode" value="dhcp" {dhcp_checked} onclick="toggleStatic(false)"> DHCP</label>
+<label style="flex:0"><input type="radio" name="net_mode" value="static" {static_checked} onclick="toggleStatic(true)"> Tĩnh</label>
+</div>
+</div>
+<div id="static-fields" style="display:{static_display}">
+<div class="row"><label>Địa chỉ IP:</label><input type="text" name="net_ipaddr" id="net_ipaddr" value="{net_ipaddr}" placeholder="192.168.1.100"></div>
+<div class="row"><label>Subnet:</label><input type="text" name="net_netmask" id="net_netmask" value="{net_netmask}" placeholder="255.255.255.0"></div>
+<div class="row"><label>Gateway:</label><input type="text" name="net_gateway" id="net_gateway" value="{net_gateway}" placeholder="192.168.1.1"></div>
+<div class="row"><label>DNS chính:</label><input type="text" name="net_dns1" id="net_dns1" value="{net_dns1}" placeholder="8.8.8.8"></div>
+<div class="row"><label>DNS phụ:</label><input type="text" name="net_dns2" id="net_dns2" value="{net_dns2}" placeholder="8.8.4.4"></div>
+</div>
+<div style="font-size:12px;color:#888;margin-top:8px">Hiện tại: {current_ip} | GW: {current_gw}</div>
+
 <button type="submit" class="btn">Lưu cấu hình</button>
 </form>
 <a href="/" class="back">← Quay lại giám sát</a>
 </div>
+<script>
+var liveStatus = {{ip:"{live_ip}",netmask:"{live_netmask}",gateway:"{live_gw}",dns1:"{live_dns1}",dns2:"{live_dns2}"}};
+function toggleStatic(show) {{
+  document.getElementById('static-fields').style.display = show ? 'block' : 'none';
+  if (show && !document.getElementById('net_ipaddr').value) {{
+    document.getElementById('net_ipaddr').value = liveStatus.ip;
+    document.getElementById('net_netmask').value = liveStatus.netmask || '255.255.255.0';
+    document.getElementById('net_gateway').value = liveStatus.gateway;
+    document.getElementById('net_dns1').value = liveStatus.dns1;
+    document.getElementById('net_dns2').value = liveStatus.dns2;
+  }}
+}}
+</script>
 </body></html>"#,
         saved_msg = saved_msg,
         mqtt_en = mqtt_checked,
-        mqtt_broker = config.mqtt.broker,
+        mqtt_broker = html_escape(&config.mqtt.broker),
         mqtt_port = config.mqtt.port,
         mqtt_tls = tls_checked,
-        mqtt_topic = config.mqtt.topic,
-        mqtt_client_id = config.mqtt.client_id,
+        mqtt_topic = html_escape(&config.mqtt.topic),
+        mqtt_client_id = html_escape(&config.mqtt.client_id),
         http_en = http_checked,
-        http_url = config.http.url,
+        http_url = html_escape(&config.http.url),
         uart_en = uart_checked,
-        uart_port = config.uart.port,
+        uart_port = html_escape(&config.uart.port),
         baud_opts = baud_options,
         interval = config.general.interval_secs,
+        // Network config
+        status_color = status_color,
+        status_text = status_text,
+        dhcp_checked = dhcp_checked,
+        static_checked = static_checked,
+        static_display = static_display,
+        net_ipaddr = html_escape(&net_config.ipaddr),
+        net_netmask = html_escape(&net_config.netmask),
+        net_gateway = html_escape(&net_config.gateway),
+        net_dns1 = html_escape(&net_config.dns_primary),
+        net_dns2 = html_escape(&net_config.dns_secondary),
+        current_ip = if net_status.ip.is_empty() { "-" } else { &net_status.ip },
+        current_gw = if net_status.gateway.is_empty() { "-" } else { &net_status.gateway },
+        // Live status for JS auto-fill
+        live_ip = html_escape(&net_status.ip),
+        live_netmask = html_escape(&net_status.netmask),
+        live_gw = html_escape(&net_status.gateway),
+        live_dns1 = html_escape(net_status.dns.first().unwrap_or(&String::new())),
+        live_dns2 = html_escape(net_status.dns.get(1).unwrap_or(&String::new())),
     )
 }
