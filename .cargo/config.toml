@@ -1,0 +1,6 @@
+[target.mipsel-unknown-linux-musl]
+linker = "mipsel-linux-musl-gcc"
+
+[build]
+# Uncomment to set default target
+# target = "mipsel-unknown-linux-musl"
