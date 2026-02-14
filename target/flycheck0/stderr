@@ -1,0 +1,6 @@
+error: process didn't exit successfully: `/Users/phonglinh/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc -vV` (signal: 6, SIGABRT: process abort signal)
+--- stderr
+dyld[40277]: Library not loaded: @rpath/librustc_driver-015fbde41a4573ae.dylib
+  Referenced from: <34967C3E-B710-37D7-886E-A496662D2CA7> /Users/phonglinh/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc
+  Reason: tried: '/Users/phonglinh/.rustup/toolchains/stable-aarch64-apple-darwin/bin/../lib/librustc_driver-015fbde41a4573ae.dylib' (no such file), '/Users/phonglinh/.rustup/toolchains/stable-aarch64-apple-darwin/bin/../lib/librustc_driver-015fbde41a4573ae.dylib' (no such file), '/Users/phonglinh/.rustup/toolchains/stable-aarch64-apple-darwin/lib/librustc_driver-015fbde41a4573ae.dylib' (no such file), '/Users/phonglinh/lib/librustc_driver-015fbde41a4573ae.dylib' (no such file), '/usr/local/lib/librustc_driver-015fbde41a4573ae.dylib' (no such file), '/usr/lib/librustc_driver-015fbde41a4573ae.dylib' (no such file, not in dyld cache)
+
