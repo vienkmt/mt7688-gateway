@@ -1,0 +1,28 @@
+MT76X8_DEMO - Hướng dẫn kiểm tra firmware
+
+1. Tên WiFi: Openwrt-xxxxx
+
+2. Mật khẩu WiFi: 12345678
+
+3. Gateway mặc định: 10.10.10.1
+
+4. Cổng WAN/P0/Ethernet0: Mặc định là chế độ WAN, kết nối với router cấp trên để hệ thống có thể truy cập internet.
+
+5. Cổng LAN/P1/Ethernet1: Không có chức năng mạng vì mặc định dùng chung với giao tiếp thẻ MMC. Để kiểm tra Ethernet1, có thể nạp firmware qua uboot. Lưu ý: Ethernet1-4 chỉ có thể ở chế độ mạng HOẶC chế độ MMC. Nếu muốn sử dụng 5 cổng mạng, cần xóa driver thẻ MMC và biên dịch lại firmware.
+
+6. Kiểm tra RS232 và RS485:
+   Mở phần mềm giao tiếp serial trên máy tính, gửi chuỗi "test uart" đến board với baudrate 115200. Board sẽ phản hồi "OK".
+
+7. Kiểm tra đồng hồ RTC:
+   Chạy lệnh: ls /dev/rtc0
+   Có thể tìm thấy device node nếu RTC hoạt động.
+
+8. Kiểm tra thẻ TF (microSD):
+   Cắm thẻ TF vào, hệ thống sẽ nhận diện và hiển thị dung lượng thẻ.
+
+9. Kiểm tra giao tiếp USB:
+   Cắm USB flash hoặc đầu đọc thẻ, hệ thống sẽ nhận diện và hiển thị dung lượng.
+
+10. Kiểm tra module 4G:
+    Cắm module EC20, hệ thống sẽ nhận diện thiết bị USB mới. Sau khi lắp SIM, có thể ping ra internet, ví dụ: ping www.baidu.com
+    (LƯU Ý: Phải cắm SIM trước khi cấp nguồn, thẻ SIM KHÔNG hỗ trợ cắm nóng!)

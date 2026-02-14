@@ -1,0 +1,27 @@
+*** HƯỚNG DẪN CHI TIẾT: XÓA DRIVER MMC CARD ***
+
+Để xóa driver MMC Card khỏi OpenWRT, hãy thực hiện các bước sau:
+
+BƯỚC 1: Cấu hình Menu
+- Chạy lệnh: make menuconfig
+
+BƯỚC 2: Chọn Kernel Modules
+- Trong menu, chọn "Kernel modules"
+
+BƯỚC 3: Chọn Other Modules
+- Chọn "Other modules"
+
+BƯỚC 4: Xóa Driver SDHCI
+- Tìm và xóa: kmod-sdhci-mt7620 (driver MMC Card)
+
+BƯỚC 5: Chỉnh sửa Device Tree Source (DTS)
+- Mở file: target/linux/ramips/dts/mt7628an_mediatek_linkit-smart-7688.dts
+- Tìm khu vực cấu hình SDHCI
+- Thay đổi trạng thái từ "enabled" thành "disabled"
+
+SAU KHI HOÀN TẤT:
+- Lưu cấu hình
+- Biên dịch lại firmware
+
+Lưu ý: Quá trình này sẽ tắt support SDHCI/MMC Card, cho phép bạn
+sử dụng các cổng mạng bổ sung (từ chế độ 1 cổng → 5 cổng).

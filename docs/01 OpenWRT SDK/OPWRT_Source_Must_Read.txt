@@ -1,0 +1,13 @@
+HƯỚNG DẪN SỬ DỤNG MÃ NGUỒN OPENWRT - BẮT BUỘC ĐỌC
+
+01. Môi trường phát triển OpenWRT và mã nguồn firmware test đã được cấu hình sẵn hoàn chỉnh, đóng gói trong máy ảo Ubuntu trên cloud drive. Chỉ cần import vào phần mềm máy ảo là có thể biên dịch ngay (mã nguồn dựa trên OpenWRT phiên bản 21).
+
+02. Thông tin đăng nhập Ubuntu trên cloud drive:
+    - Tài khoản: lzh
+    - Mật khẩu: 123
+    - Thư mục OpenWRT: /work/bojingnet
+    (Lưu ý: Mặc định khi đăng nhập sẽ vào thư mục home, thư mục dự án nằm ở thư mục gốc. Dùng lệnh: cd /work/bojingnet)
+
+03. Hai chip MT7688AN và MT7628NN hoàn toàn tương thích về chương trình. Môi trường phát triển và mã nguồn dùng chung một bộ.
+
+04. Tham khảo thêm tại trang chủ OpenWRT: https://openwrt.org
