@@ -1,9 +1,16 @@
 [package]
-name = "v3s-system-monitor"
-version = "0.1.0"
+name = "vgateway"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
+tokio = { version = "1", default-features = false, features = [
+    "rt",
+    "macros",
+    "time",
+    "sync",
+    "io-util",
+] }
 tiny_http = "0.12"
 libc = "0.2"
 ureq = "2"

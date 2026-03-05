@@ -1,0 +1,44 @@
+Tôi chuẩn bị làm 1 dự án iot Gateway, viết bằng rust, đây là cấu hình phần cứng
+
+
+
+
+
+
+# Device Configuration - OpenWrt Gateway
+
+## Hardware
+- **Board:** MediaTek LinkIt Smart 7688
+- **SoC:** MT7688AN (MIPS 24KEc, 580MHz, single-core)
+- **RAM:** 256MB DDR2
+- **Flash:** 32MB SPI-NOR (25MB available on /overlay)
+- **Wi-Fi:** 2.4GHz 802.11b/g/n (150Mbps, 1T1R)
+- **Interfaces:** 1x Ethernet, USB Host, UART x2, SPI, I2C, GPIO
+
+## Firmware
+- **OS:** OpenWrt 21.02-SNAPSHOT r16473-1472a8f
+- **Kernel:** 5.4.171
+- **LuCI:** openwrt-21.02 branch git-23.021.36412-5965d2a
+- **Architecture:** ramips/mt76x8 (MIPS)
+
+## Network
+- **LAN:** br-lan (eth0.1 + wlan0) — 10.10.10.1/24
+- **WAN:** eth0.2 — DHCP (192.168.2.x)
+
+## Serial / UART
+- **UART 1:** Ready (/test_uart 1)
+- **UART 2:** Ready (/test_uart 2)
+- Binary: /test_uart (12KB, runs 2 instances)
+
+## Installed Modules
+- **4G:** Quectel module + quectel-CM (LTE connectivity)
+- **Audio:** Alarm01.wav (alert system)
+- **LuCI packages:** firewall, opkg, proto-qmi, theme-bootstrap/material
+- **Language:** Chinese (zh-cn) UI pack installed
+
+## Constraints
+- CPU 580MHz single-core — avoid heavy processing (VPN throughput limited)
+- Wi-Fi 2.4GHz only, no 5GHz
+- Package manager: opkg (use --force-space if low on storage)
+- pip: use --break-system-packages flag
+- SSH accessible via WAN; LuCI blocked on WAN by default (firewall)

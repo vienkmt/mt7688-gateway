@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::RwLock;
+use tokio::sync::watch;
 
-const CONFIG_PATH: &str = "/etc/v3s-monitor.toml";
+const CONFIG_PATH: &str = "/etc/vgateway.toml";
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
@@ -109,10 +109,10 @@ impl Config {
     }
 }
 
-/// Shared app state with config hot-reload support
+/// Shared app state with config hot-reload support via watch channel
 pub struct AppState {
     config: RwLock<Config>,
-    version: AtomicU32,
+    config_tx: watch::Sender<()>,
 }
 
 impl AppState {
@@ -122,21 +122,23 @@ impl AppState {
             config.mqtt.broker, config.mqtt.port, config.mqtt.tls,
             if config.http.enabled { &config.http.url } else { "disabled" },
             config.uart.port, config.uart.baudrate);
-        Self { config: RwLock::new(config), version: AtomicU32::new(0) }
+        let (config_tx, _) = watch::channel(());
+        Self { config: RwLock::new(config), config_tx }
     }
 
     pub fn get(&self) -> Config {
         self.config.read().unwrap().clone()
     }
 
-    pub fn version(&self) -> u32 {
-        self.version.load(Ordering::Relaxed)
+    /// Subscribe to config change notifications
+    pub fn subscribe(&self) -> watch::Receiver<()> {
+        self.config_tx.subscribe()
     }
 
     pub fn update(&self, new_config: Config) {
         new_config.save();
         *self.config.write().unwrap() = new_config;
-        self.version.fetch_add(1, Ordering::Relaxed);
+        let _ = self.config_tx.send(()); // Notify watchers immediately
         println!("[Config] Updated, publishers will reconnect");
     }
 }

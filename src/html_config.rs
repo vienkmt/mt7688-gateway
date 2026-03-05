@@ -30,6 +30,15 @@ pub fn render_config_page(
         })
         .collect::<Vec<_>>()
         .join("");
+    let current_port = &config.uart.port;
+    let port_options = ["/dev/ttyS1", "/dev/ttyS2"]
+        .iter()
+        .map(|&p| {
+            let sel = if p == current_port { "selected" } else { "" };
+            format!(r#"<option value="{}" {}>{}</option>"#, p, sel, p)
+        })
+        .collect::<Vec<_>>()
+        .join("");
     // Network config
     let dhcp_checked = if net_config.mode == NetworkMode::Dhcp { "checked" } else { "" };
     let static_checked = if net_config.mode == NetworkMode::Static { "checked" } else { "" };
@@ -136,7 +145,7 @@ input[type=checkbox] {{ width: 18px; height: 18px; accent-color: #667eea; }}
 
 <h3>UART</h3>
 <div class="row"><label>Bật:</label><input type="checkbox" name="uart_enabled" {uart_en}></div>
-<input type="hidden" name="uart_port" value="{uart_port}">
+<div class="row"><label>Port:</label><select name="uart_port">{port_opts}</select></div>
 <div class="row"><label>Baudrate:</label><select name="uart_baudrate">{baud_opts}</select></div>
 
 <h3>Chung</h3>
@@ -187,7 +196,7 @@ function toggleStatic(show) {{
         http_en = http_checked,
         http_url = html_escape(&config.http.url),
         uart_en = uart_checked,
-        uart_port = html_escape(&config.uart.port),
+        port_opts = port_options,
         baud_opts = baud_options,
         interval = config.general.interval_secs,
         // Network config

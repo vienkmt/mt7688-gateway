@@ -1,11 +1,10 @@
 mod config;
 mod html_config;
 mod html_template;
-mod oled;
-mod wifi_led;
 mod http_publisher;
 mod mqtt_publisher;
 mod network_config;
+mod oled;
 mod system_info;
 mod time_sync;
 mod uart_reader;
@@ -14,32 +13,44 @@ mod uci;
 use config::{AppState, Config, GeneralConfig, HttpConfig, MqttConfig, UartConfig};
 use std::sync::Arc;
 
-fn main() {
-    // Init WiFi LED heartbeat (blink every 2s to show app is running)
-    wifi_led::init();
-    wifi_led::start_heartbeat(2000);
+const HTTP_PORT: u16 = 8889;
 
-    // Start OLED display loop (time + IP, updates every second)
-    oled::start_display_loop();
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    // Start OLED display loop (async task)
+    tokio::spawn(oled::display_loop());
 
     // Sync system clock before TLS (needs correct time for cert validation)
     time_sync::sync_time();
 
     let state = Arc::new(AppState::new());
 
-    // Create UART → publisher channels (bounded to prevent OOM on 64MB device)
-    let (mqtt_uart_tx, mqtt_uart_rx) = std::sync::mpsc::sync_channel::<String>(128);
-    let (http_uart_tx, http_uart_rx) = std::sync::mpsc::sync_channel::<String>(128);
+    // Create std mpsc channels for UART → publishers (cross-thread compatible)
+    let (mqtt_tx, mqtt_rx) = std::sync::mpsc::channel::<String>();
+    let (http_tx, http_rx) = tokio::sync::mpsc::channel::<String>(64);
 
-    // Start publishers in background (with UART receivers)
-    mqtt_publisher::start_background(Arc::clone(&state), mqtt_uart_rx);
-    http_publisher::start_background(Arc::clone(&state), http_uart_rx);
+    // Spawn MQTT in a separate OS thread (rumqttc has issues with tokio on MIPS)
+    let mqtt_state = state.clone();
+    std::thread::spawn(move || {
+        mqtt_publisher::run_sync(mqtt_state, mqtt_rx);
+    });
 
-    // Start UART reader (sends to both publishers)
-    uart_reader::start_background(Arc::clone(&state), mqtt_uart_tx, http_uart_tx);
+    // Spawn async tasks
+    tokio::spawn(uart_reader::run(state.clone(), mqtt_tx, http_tx));
+    tokio::spawn(http_publisher::run(state.clone(), http_rx));
 
-    let addr = "0.0.0.0:8888";
-    let server = match tiny_http::Server::http(addr) {
+    // HTTP server (blocking, run in spawn_blocking)
+    let server_state = state.clone();
+    tokio::task::spawn_blocking(move || {
+        run_http_server(server_state);
+    })
+    .await
+    .unwrap();
+}
+
+fn run_http_server(state: Arc<AppState>) {
+    let addr = format!("0.0.0.0:{}", HTTP_PORT);
+    let server = match tiny_http::Server::http(&addr) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Failed to bind {}: {}", addr, e);
@@ -47,7 +58,7 @@ fn main() {
         }
     };
 
-    println!("V3S System Monitor running on http://{}", addr);
+    println!("vGateway running on http://{}", addr);
 
     for mut request in server.incoming_requests() {
         let url = request.url().to_string();
@@ -57,15 +68,14 @@ fn main() {
             let info = system_info::SystemInfo::collect();
             let html = html_template::render_page(&info);
             tiny_http::Response::from_string(html).with_header(
-                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap(),
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..])
+                    .unwrap(),
             )
         } else if url == "/config" && is_post {
             let mut body = String::new();
             let _ = request.as_reader().read_to_string(&mut body);
-            // Parse and save app config
             let new_config = parse_config_form(&body);
             state.update(new_config);
-            // Parse and save network config
             let net_config = parse_network_form_from_config(&body);
             let net_errors = match network_config::validate_config(&net_config) {
                 Ok(()) => match net_config.save_to_uci() {
@@ -81,9 +91,11 @@ fn main() {
                 net_config
             };
             let net_status = network_config::NetworkStatus::get_current();
-            let html = html_config::render_config_page(&config, &net_config_display, &net_status, true, &net_errors);
+            let html =
+                html_config::render_config_page(&config, &net_config_display, &net_status, true, &net_errors);
             tiny_http::Response::from_string(html).with_header(
-                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap(),
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..])
+                    .unwrap(),
             )
         } else if url == "/config" {
             let config = state.get();
@@ -91,15 +103,14 @@ fn main() {
             let net_status = network_config::NetworkStatus::get_current();
             let html = html_config::render_config_page(&config, &net_config, &net_status, false, &[]);
             tiny_http::Response::from_string(html).with_header(
-                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap(),
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..])
+                    .unwrap(),
             )
         } else if url == "/network" {
-            // Redirect /network to /config
             tiny_http::Response::from_string("")
                 .with_status_code(tiny_http::StatusCode(302))
                 .with_header(tiny_http::Header::from_bytes(&b"Location"[..], &b"/config"[..]).unwrap())
         } else if url == "/api/network" && is_post {
-            // POST /api/network - JSON API
             let mut body = String::new();
             let _ = request.as_reader().read_to_string(&mut body);
             let net_config = parse_network_json(&body);
@@ -109,15 +120,18 @@ fn main() {
                         let status = network_config::NetworkStatus::get_current();
                         format_network_json(&network_config::NetworkConfig::load_from_uci(), &status, true, &[])
                     }
-                    Err(e) => format_network_json(&net_config, &network_config::NetworkStatus::get_current(), false, &[e]),
+                    Err(e) => {
+                        format_network_json(&net_config, &network_config::NetworkStatus::get_current(), false, &[e])
+                    }
                 },
-                Err(errs) => format_network_json(&net_config, &network_config::NetworkStatus::get_current(), false, &errs),
+                Err(errs) => {
+                    format_network_json(&net_config, &network_config::NetworkStatus::get_current(), false, &errs)
+                }
             };
             tiny_http::Response::from_string(response_json).with_header(
                 tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap(),
             )
         } else if url == "/api/network" {
-            // GET /api/network - JSON API
             let net_config = network_config::NetworkConfig::load_from_uci();
             let status = network_config::NetworkStatus::get_current();
             let json = format_network_json(&net_config, &status, false, &[]);
@@ -125,14 +139,12 @@ fn main() {
                 tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap(),
             )
         } else {
-            tiny_http::Response::from_string("404 Not Found")
-                .with_status_code(tiny_http::StatusCode(404))
+            tiny_http::Response::from_string("404 Not Found").with_status_code(tiny_http::StatusCode(404))
         };
         let _ = request.respond(response);
     }
 }
 
-/// Parse URL-encoded form body into Config
 fn parse_config_form(body: &str) -> Config {
     let params: Vec<(String, String)> = body
         .split('&')
@@ -174,7 +186,6 @@ fn has_key(params: &[(String, String)], key: &str) -> bool {
     params.iter().any(|(k, _)| k == key)
 }
 
-/// Escape JSON string special characters
 fn json_escape(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('"', "\\\"")
@@ -200,7 +211,6 @@ fn url_decode(s: &str) -> String {
     out
 }
 
-/// Parse network config from /config form (field names: net_mode, net_ipaddr, etc.)
 fn parse_network_form_from_config(body: &str) -> network_config::NetworkConfig {
     let params: Vec<(String, String)> = body
         .split('&')
@@ -226,34 +236,6 @@ fn parse_network_form_from_config(body: &str) -> network_config::NetworkConfig {
     }
 }
 
-/// Parse URL-encoded form for network config (standalone /network page)
-#[allow(dead_code)]
-fn parse_network_form(body: &str) -> network_config::NetworkConfig {
-    let params: Vec<(String, String)> = body
-        .split('&')
-        .filter_map(|pair| {
-            let mut parts = pair.splitn(2, '=');
-            Some((url_decode(parts.next()?), url_decode(parts.next().unwrap_or(""))))
-        })
-        .collect();
-
-    let mode = if get_val(&params, "mode") == "static" {
-        network_config::NetworkMode::Static
-    } else {
-        network_config::NetworkMode::Dhcp
-    };
-
-    network_config::NetworkConfig {
-        mode,
-        ipaddr: get_val(&params, "ipaddr"),
-        netmask: get_val(&params, "netmask"),
-        gateway: get_val(&params, "gateway"),
-        dns_primary: get_val(&params, "dns_primary"),
-        dns_secondary: get_val(&params, "dns_secondary"),
-    }
-}
-
-/// Parse JSON body for network config (manual parsing, no serde_json)
 fn parse_network_json(body: &str) -> network_config::NetworkConfig {
     let get_json_val = |key: &str| -> String {
         let pattern = format!("\"{}\"", key);
@@ -288,7 +270,6 @@ fn parse_network_json(body: &str) -> network_config::NetworkConfig {
     }
 }
 
-/// Format network config and status as JSON (manual, no serde_json)
 fn format_network_json(
     config: &network_config::NetworkConfig,
     status: &network_config::NetworkStatus,
@@ -296,8 +277,17 @@ fn format_network_json(
     errors: &[String],
 ) -> String {
     let mode_str = config.mode.as_str();
-    let dns_arr: String = status.dns.iter().map(|d| format!("\"{}\"", json_escape(d))).collect::<Vec<_>>().join(",");
-    let errors_arr: String = errors.iter().map(|e| format!("\"{}\"", json_escape(e))).collect::<Vec<_>>().join(",");
+    let dns_arr: String = status
+        .dns
+        .iter()
+        .map(|d| format!("\"{}\"", json_escape(d)))
+        .collect::<Vec<_>>()
+        .join(",");
+    let errors_arr: String = errors
+        .iter()
+        .map(|e| format!("\"{}\"", json_escape(e)))
+        .collect::<Vec<_>>()
+        .join(",");
 
     format!(
         r#"{{"config":{{"mode":"{}","ipaddr":"{}","netmask":"{}","gateway":"{}","dns_primary":"{}","dns_secondary":"{}"}},"status":{{"ip":"{}","netmask":"{}","gateway":"{}","dns":[{}],"is_up":{}}},"saved":{},"errors":[{}]}}"#,

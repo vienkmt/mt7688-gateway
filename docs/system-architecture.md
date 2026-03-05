@@ -1,7 +1,7 @@
 # System Architecture - MT7688AN IoT Gateway
 
-**Last Updated:** 2026-02-12
-**Version:** 1.0
+**Last Updated:** 2026-03-05
+**Version:** 2.0 (Async Refactor)
 
 ## Architecture Overview
 
@@ -16,8 +16,8 @@ The MT7688AN IoT Gateway is a Rust-based embedded system that collects sensor/de
 │                                                               │
 │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐   │
 │  │  Web Server   │  │  UART Reader  │  │   Time Sync   │   │
-│  │  (tiny-http)  │  │  (Background) │  │ (Startup)     │   │
-│  │   :8888       │  │   /dev/ttyS0  │  │               │   │
+│  │  (tiny-http)  │  │ (AsyncFd epoll)   │ (Startup)     │   │
+│  │   :8889       │  │   /dev/ttyS0  │  │               │   │
 │  └───────────────┘  └───────────────┘  └───────────────┘   │
 │         △                    △                                │
 │         │                    │                                │
@@ -80,6 +80,12 @@ The MT7688AN IoT Gateway is a Rust-based embedded system that collects sensor/de
 | `/network` | POST | Save WAN settings | HTML (with validation errors) |
 | `/api/network` | GET | Get WAN config as JSON | JSON |
 | `/api/network` | POST | Set WAN config from JSON | JSON (with errors) |
+
+**Server Details:**
+- Runtime: Tokio single-thread executor with epoll I/O multiplexing
+- Concurrency: Async tasks for non-blocking HTTP handling
+- Port changed from 8888 → 8889
+- Config file changed from `/etc/v3s-monitor.toml` → `/etc/vgateway.toml`
 
 **Request Handler Flow:**
 
@@ -230,39 +236,41 @@ Main Thread                Background Publishers
 - Partial reads (torn updates)
 - Data races on MIPS 32-bit
 
-### 4. UART & Data Publishing
+### 4. UART & Data Publishing (Async v0.2.0)
 
-**Three Background Threads:**
+**Async Task Architecture:**
 
 ```
 Startup (main.rs)
     │
-    ├─ Create sync_channel(128) for MQTT
-    ├─ Create sync_channel(128) for HTTP
-    ├─ Spawn uart_reader (with both TX sides)
-    ├─ Spawn mqtt_publisher (with RX side)
-    └─ Spawn http_publisher (with RX side)
+    ├─ Create tokio::sync::broadcast channel for UART data
+    ├─ Create tokio::sync::watch channel for config updates
+    ├─ tokio::spawn uart_reader_task
+    ├─ tokio::spawn mqtt_publisher_task
+    ├─ tokio::spawn http_publisher_task
+    ├─ tokio::spawn led_heartbeat_task
+    └─ tokio::spawn oled_display_task
     │
     ▼
-UART Reader Loop (uart_reader.rs)
+UART Reader (AsyncFd + epoll)
     │
-    ├─ Open /dev/ttyS1 (Quectel modem)
-    ├─ Read line (blocking on UART)
+    ├─ AsyncFd wraps /dev/ttyS1 for epoll-based I/O
+    ├─ await on async read (non-blocking, wake on data)
     ├─ Parse data if valid
-    ├─ Send to MQTT channel (mqtt_uart_tx.send())
-    ├─ Send to HTTP channel (http_uart_tx.send())
-    └─ Loop (bounded channel blocks if full, prevents OOM)
+    ├─ Broadcast to all subscribers (MQTT, HTTP, OLED)
+    └─ Loop continues immediately (no blocking)
     │
     ▼
-Publishers Loop
-    ├─ MQTT: Receive ──▶ Publish to topic ──▶ If error, reconnect
-    └─ HTTP: Receive ──▶ POST to endpoint ──▶ If error, retry with backoff
+Publishers Loop (Async)
+    ├─ MQTT: Await receive ──▶ AsyncClient publish ──▶ If error, reconnect
+    └─ HTTP: Await receive ──▶ spawn_blocking(ureq POST) ──▶ If error, retry with backoff
 ```
 
-**Channel Bounds:**
-- **128 messages max** per channel
-- **Prevents OOM:** If publisher is slow, channel fills up → uart_reader blocks → no data lost, device stable
-- **Configurable interval:** `general_config.interval_secs` throttles UART reads
+**Channel Architecture:**
+- **tokio::sync::broadcast**: Multi-subscriber pattern for UART data (replaces std::sync::mpsc)
+- **tokio::sync::watch**: Config change notifications (LED blink rate, OLED updates)
+- **Capacity:** Default 128, prevents OOM while supporting multiple subscribers
+- **AsyncFd epoll:** Efficient I/O multiplexing for single-thread executor
 
 ### 5. Web UI Architecture
 
@@ -335,21 +343,25 @@ Rust Code
 - Caller decides to retry, log, or propagate error
 - Network config validation happens **before** UCI calls to minimize failures
 
-## Concurrency Model
+## Concurrency Model (Async/Await)
 
-**Threads:**
+**Async Tasks (v0.2.0 refactor):**
 
-| Thread | Purpose | Shared State | Sync Mechanism |
-|--------|---------|--------------|---|
-| Main | HTTP server loop | AppState (Config) | Arc<Mutex<>> |
-| UART Reader | Read serial, dispatch to publishers | Channel senders | sync_channel (bounded) |
-| MQTT Publisher | Publish to broker | AppState (Config) | Arc<Mutex<>> + Channel |
-| HTTP Publisher | POST to endpoint | AppState (Config) | Arc<Mutex<>> + Channel |
+| Task | Purpose | Shared State | Sync Mechanism |
+|------|---------|--------------|---|
+| HTTP Server | tiny-http async handler | AppState (Config) | Arc<Mutex<>> |
+| UART Reader | Read serial via AsyncFd | Channel senders | tokio::sync::broadcast + watch |
+| MQTT Publisher | Publish to broker (AsyncClient) | AppState (Config) | Arc<Mutex<>> + Channel |
+| HTTP Publisher | POST to endpoint (ureq + spawn_blocking) | AppState (Config) | Arc<Mutex<>> + Channel |
+| LED Controller | GPIO blink task | Shared GPIO state | tokio::spawn |
+| OLED Controller | Display updates | Shared display state | tokio::spawn |
 
-**No Data Races:**
-- Mutex protects Config
-- Channels ensure ordered delivery
-- Bounded channels prevent OOM
+**Async Benefits:**
+- Single-thread executor (epoll) reduces context switching
+- Better resource usage on 256MB RAM device
+- tokio::spawn replaces thread::spawn for lighter tasks
+- Broadcast channels replace std::sync::mpsc for multi-subscriber patterns
+- Watch channels for configuration change notifications
 
 ## Memory & Storage
 

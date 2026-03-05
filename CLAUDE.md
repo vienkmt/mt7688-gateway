@@ -42,11 +42,23 @@ cargo check --target mipsel-unknown-linux-musl
 
 ## Code Guidelines
 
-- Keep binaries small (target <500KB)
-- Use async runtime carefully (tokio adds ~1MB)
-- Prefer `heapless` collections where possible
-- Handle UART/GPIO with `serialport` or `embedded-hal`
+- Keep binaries small (target <800KB with Tokio runtime)
+- Tokio single-thread executor (v0.2.0+) provides efficient async/await with epoll
+- Use `heapless` collections where possible
+- Handle UART with AsyncFd (non-blocking epoll) or `serialport`
+- GPIO via tokio::spawn for LED heartbeat, OLED display updates
 - Log via `syslog` or file (no stdout in daemon mode)
+
+## Async Runtime (v0.2.0+)
+
+- **Runtime:** Tokio with single-thread executor and epoll backend
+- **UART I/O:** AsyncFd wraps serial file descriptor for non-blocking epoll
+- **Channels:** tokio::sync::broadcast (multi-subscriber), tokio::sync::watch (config changes)
+- **Tasks:** tokio::spawn for lightweight async tasks (LED, OLED, publishers)
+- **Blocking Operations:** spawn_blocking for ureq HTTP POST (maintains blocking API)
+- **Port:** 8889 (changed from 8888)
+- **Config:** /etc/vgateway.toml (changed from /etc/v3s-monitor.toml)
+- **Binary:** vgateway (changed from v3s-system-monitor)
 
 ## Documentation
 
