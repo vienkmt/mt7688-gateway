@@ -50,7 +50,7 @@
 - MQTT publisher for sensor data
 - HTTP publisher for external endpoint integration
 - Network configuration management via OpenWrt UCI
-- UART serial communication with 4G Quectel modem
+- UART serial communication with external devices (sensors, MCU)
 - Web UI with system dashboard and configuration pages
 - Support for static and DHCP WAN modes
 - TLS support for MQTT and HTTP with system clock synchronization

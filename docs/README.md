@@ -87,7 +87,7 @@ Welcome to the MT7688AN IoT Gateway project documentation. This directory contai
 ## Architecture at a Glance
 
 ```
-4G Modem → UART → UART Reader ┐
+Sensors/MCU → UART → UART Reader ┐
                                ├→ MQTT Publisher → MQTT Broker
                                │
                                └→ HTTP Publisher → HTTP Server

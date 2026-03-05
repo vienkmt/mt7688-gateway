@@ -33,7 +33,7 @@ The MT7688AN IoT Gateway is a Rust-based embedded system that collects sensor/de
 │    │ ▼           ▼            │  ▼                           │
 │    │ ┌─────────────────────┐  │ ┌──────────────────────┐    │
 │    │ │   UCI Wrapper       │  │ │  AppState (Config)   │    │
-│    │ │   /etc/config/net   │  │ │  Arc<Mutex<...>>     │    │
+│    │ │   /etc/config/net   │  │ │  RwLock + watch<()>  │    │
 │    └─┤                     │  └─┤                      │    │
 │      │  [get|set|delete|   │    │ MQTT/HTTP/UART       │    │
 │      │   commit]           │    │ settings             │    │
@@ -41,8 +41,8 @@ The MT7688AN IoT Gateway is a Rust-based embedded system that collects sensor/de
 │                                                               │
 │  ┌──────────────────┐     ┌──────────────────┐              │
 │  │  MQTT Publisher  │     │ HTTP Publisher   │              │
-│  │  (Background)    │     │ (Background)     │              │
-│  │  Paho MQTT       │     │ HTTP POST        │              │
+│  │  (std::thread)   │     │ (tokio::spawn)   │              │
+│  │  rumqttc sync    │     │ ureq + blocking  │              │
 │  └──────────────────┘     └──────────────────┘              │
 │         △                          △                          │
 └─────────┼──────────────────────────┼──────────────────────────┘
@@ -50,16 +50,17 @@ The MT7688AN IoT Gateway is a Rust-based embedded system that collects sensor/de
           │ (from UART reader)       │ (from UART reader)
           │                          │
     ┌─────▼──────────────────────────▼─────┐
-    │     Bounded Channels (128 messages)   │
-    │     (Prevents OOM on 64MB device)     │
+    │  Channels:                            │
+    │  - MQTT: std::sync::mpsc (unbounded)  │
+    │  - HTTP: tokio::sync::mpsc (cap 64)   │
     └─────────────────────────────────────────┘
           △
           │ (UART serial data)
           │
     ┌─────┴──────────┐
-    │  4G Modem      │
-    │  (Quectel)     │
-    │  /dev/ttyS1    │
+    │  External MCU  │
+    │   (Sensors)    │
+    │  /dev/ttyS2    │
     └────────────────┘
 ```
 
@@ -82,10 +83,10 @@ The MT7688AN IoT Gateway is a Rust-based embedded system that collects sensor/de
 | `/api/network` | POST | Set WAN config from JSON | JSON (with errors) |
 
 **Server Details:**
-- Runtime: Tokio single-thread executor with epoll I/O multiplexing
-- Concurrency: Async tasks for non-blocking HTTP handling
-- Port changed from 8888 → 8889
-- Config file changed from `/etc/v3s-monitor.toml` → `/etc/vgateway.toml`
+- Runtime: Tokio single-thread executor (`#[tokio::main(flavor = "current_thread")]`)
+- HTTP Server: `spawn_blocking` wrapping tiny-http (blocking server)
+- Port: 8889
+- Config file: `/etc/vgateway.toml`
 
 **Request Handler Flow:**
 
@@ -200,11 +201,12 @@ eth0.2 now has static IP (verified via ip addr show eth0.2)
 
 ### 3. Configuration Manager (config.rs)
 
-**Thread-Safe Config Storage:**
+**Thread-Safe Config Storage with Watch Notification:**
 
 ```rust
 pub struct AppState {
-    config: Mutex<Config>
+    config: RwLock<Config>,           // RwLock for concurrent reads
+    config_tx: watch::Sender<()>,     // Notify subscribers on update
 }
 
 pub struct Config {
@@ -218,58 +220,86 @@ pub struct Config {
 **Access Pattern:**
 
 ```
-Main Thread                Background Publishers
-    │                              │
-    ├─ state.get() ──────────▶ Acquire lock
-    │  (read-only)            Get copy of Config
-    │                         Release lock
-    │                              │
-    ├─ state.update() ──────▶ Acquire lock
-    │  (write)                Update Config
-    │                         Release lock
-    │                              │
-    └───────────────────────────────▶ Publishers read latest config
+HTTP Server (spawn_blocking)     Tokio Tasks              std::thread (MQTT)
+    │                                │                          │
+    ├─ state.get() ───────────▶ RwLock read                    │
+    │  (read-only)             Clone Config                    │
+    │                              │                           │
+    ├─ state.update() ─────────▶ RwLock write                  │
+    │  (write + notify)         Save to file                   │
+    │                           config_tx.send(())             │
+    │                              │                           │
+    │                              ▼                           │
+    │                          config_rx.changed() ────────────│
+    │                          (UART reader, HTTP publisher)   │
+    │                                                          │
+    └──────────────────────────────────────────────────────▶ Polls state.get() every 2s
+                                                            (cannot use async watch)
 ```
 
-**Mutex Prevents:**
-- Concurrent modification
-- Partial reads (torn updates)
-- Data races on MIPS 32-bit
+**RwLock Benefits:**
+- Multiple concurrent readers (publishers reading config)
+- Exclusive writer (HTTP server updating config)
+- Better performance than Mutex for read-heavy workloads
 
-### 4. UART & Data Publishing (Async v0.2.0)
+**Watch Channel:**
+- `config_tx.send(())` notifies all async subscribers immediately
+- MQTT publisher polls because it runs in std::thread (not async)
 
-**Async Task Architecture:**
+### 4. UART & Data Publishing (v2.0 Hybrid Architecture)
+
+**Hybrid Async/Sync Task Architecture:**
+
+Due to rumqttc compatibility issues on MIPS, the architecture uses a hybrid approach:
+- **Tokio tasks** for UART reading, HTTP publishing, OLED display
+- **std::thread** for MQTT publishing (rumqttc sync Client works better on MIPS)
 
 ```
-Startup (main.rs)
+Startup (main.rs) - #[tokio::main(flavor = "current_thread")]
     │
-    ├─ Create tokio::sync::broadcast channel for UART data
-    ├─ Create tokio::sync::watch channel for config updates
-    ├─ tokio::spawn uart_reader_task
-    ├─ tokio::spawn mqtt_publisher_task
-    ├─ tokio::spawn http_publisher_task
-    ├─ tokio::spawn led_heartbeat_task
-    └─ tokio::spawn oled_display_task
+    ├─ Create std::sync::mpsc::channel for UART → MQTT (cross-thread)
+    ├─ Create tokio::sync::mpsc::channel for UART → HTTP (async, capacity 64)
+    ├─ Create tokio::sync::watch<()> for config change notifications
+    ├─ std::thread::spawn(mqtt_publisher::run_sync)  ← OS thread, NOT tokio
+    ├─ tokio::spawn(uart_reader::run)
+    ├─ tokio::spawn(http_publisher::run)
+    ├─ tokio::spawn(oled::display_loop)
+    └─ tokio::task::spawn_blocking(run_http_server)  ← tiny-http blocking
     │
     ▼
-UART Reader (AsyncFd + epoll)
+UART Reader (tokio::spawn + AsyncFd + epoll)
     │
-    ├─ AsyncFd wraps /dev/ttyS1 for epoll-based I/O
-    ├─ await on async read (non-blocking, wake on data)
-    ├─ Parse data if valid
-    ├─ Broadcast to all subscribers (MQTT, HTTP, OLED)
-    └─ Loop continues immediately (no blocking)
+    ├─ AsyncFd wraps /dev/ttyS* for epoll-based non-blocking I/O
+    ├─ tokio::select! { config_rx.changed(), async_fd.readable() }
+    ├─ On data: format JSON, send to both channels
+    │   ├─ mqtt_tx.send(json) → std::sync::mpsc (blocking, but fast)
+    │   └─ http_tx.try_send(json) → tokio::sync::mpsc (non-blocking)
+    └─ On config change: reconnect with new UART settings
     │
     ▼
-Publishers Loop (Async)
-    ├─ MQTT: Await receive ──▶ AsyncClient publish ──▶ If error, reconnect
-    └─ HTTP: Await receive ──▶ spawn_blocking(ureq POST) ──▶ If error, retry with backoff
+MQTT Publisher (std::thread::spawn) - SYNC, NOT async
+    │
+    ├─ rumqttc::Client (sync) + separate connection thread
+    ├─ uart_rx.recv_timeout(1s) for UART data
+    ├─ Periodic system info publish (configurable interval)
+    ├─ Config polling every 2s (cannot use watch in std::thread)
+    └─ On config change: return and reconnect
+    │
+    ▼
+HTTP Publisher (tokio::spawn)
+    │
+    ├─ tokio::select! { config_watch.changed(), uart_rx.recv(), interval.tick() }
+    ├─ On UART data: spawn_blocking(ureq POST)
+    ├─ On interval: spawn_blocking(ureq POST system info)
+    └─ On config change: reload settings
 ```
 
-**Channel Architecture:**
-- **tokio::sync::broadcast**: Multi-subscriber pattern for UART data (replaces std::sync::mpsc)
-- **tokio::sync::watch**: Config change notifications (LED blink rate, OLED updates)
-- **Capacity:** Default 128, prevents OOM while supporting multiple subscribers
+**Channel Architecture (Actual Implementation):**
+- **UART → MQTT:** `std::sync::mpsc::channel<String>` (cross-thread compatible, required for std::thread)
+- **UART → HTTP:** `tokio::sync::mpsc::channel<String>` (async, capacity 64)
+- **Config notifications:** `tokio::sync::watch<()>` (notify-only, no data payload)
+  - UART reader and HTTP publisher use `config_rx.changed()` in tokio::select!
+  - MQTT publisher polls config every 2s (cannot use async watch in std::thread)
 - **AsyncFd epoll:** Efficient I/O multiplexing for single-thread executor
 
 ### 5. Web UI Architecture
@@ -343,25 +373,40 @@ Rust Code
 - Caller decides to retry, log, or propagate error
 - Network config validation happens **before** UCI calls to minimize failures
 
-## Concurrency Model (Async/Await)
+## Concurrency Model (v2.0 Hybrid Async/Sync)
 
-**Async Tasks (v0.2.0 refactor):**
+**Task Architecture (v2.0 refactor):**
 
-| Task | Purpose | Shared State | Sync Mechanism |
-|------|---------|--------------|---|
-| HTTP Server | tiny-http async handler | AppState (Config) | Arc<Mutex<>> |
-| UART Reader | Read serial via AsyncFd | Channel senders | tokio::sync::broadcast + watch |
-| MQTT Publisher | Publish to broker (AsyncClient) | AppState (Config) | Arc<Mutex<>> + Channel |
-| HTTP Publisher | POST to endpoint (ureq + spawn_blocking) | AppState (Config) | Arc<Mutex<>> + Channel |
-| LED Controller | GPIO blink task | Shared GPIO state | tokio::spawn |
-| OLED Controller | Display updates | Shared display state | tokio::spawn |
+| Task | Spawn Method | Shared State | Channel Type | Why |
+|------|--------------|--------------|--------------|-----|
+| HTTP Server | `spawn_blocking` | Arc<AppState> | - | tiny-http is blocking |
+| UART Reader | `tokio::spawn` | Arc<AppState> | std::mpsc + tokio::mpsc senders | AsyncFd for epoll |
+| MQTT Publisher | `std::thread::spawn` | Arc<AppState> | std::sync::mpsc receiver | rumqttc sync Client on MIPS |
+| HTTP Publisher | `tokio::spawn` | Arc<AppState> | tokio::sync::mpsc receiver | async with spawn_blocking for ureq |
+| OLED Display | `tokio::spawn` | - | - | async display loop |
 
-**Async Benefits:**
-- Single-thread executor (epoll) reduces context switching
-- Better resource usage on 256MB RAM device
-- tokio::spawn replaces thread::spawn for lighter tasks
-- Broadcast channels replace std::sync::mpsc for multi-subscriber patterns
-- Watch channels for configuration change notifications
+**Config Change Notification:**
+
+| Component | Mechanism | Reason |
+|-----------|-----------|--------|
+| UART Reader | `tokio::sync::watch<()>.changed()` | Async, reconnect on UART settings change |
+| HTTP Publisher | `tokio::sync::watch<()>.changed()` | Async, reload on config change |
+| MQTT Publisher | Polling `state.get()` every 2s | std::thread cannot use async watch |
+
+**AppState Implementation:**
+```rust
+pub struct AppState {
+    config: RwLock<Config>,           // Thread-safe config storage
+    config_tx: watch::Sender<()>,     // Notify-only (no data payload)
+}
+```
+
+**Hybrid Architecture Benefits:**
+- Single-thread Tokio executor (epoll) reduces context switching
+- std::thread for MQTT avoids rumqttc async issues on MIPS
+- RwLock allows concurrent reads, exclusive writes
+- watch<()> is lightweight (no data cloning)
+- std::sync::mpsc for cross-thread communication is simple and reliable
 
 ## Memory & Storage
 
