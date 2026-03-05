@@ -137,7 +137,7 @@ input[type=checkbox] {{ width: 18px; height: 18px; accent-color: #667eea; }}
 <div class="row"><label>Cổng:</label><input type="number" name="mqtt_port" value="{mqtt_port}"></div>
 <div class="row"><label>TLS:</label><input type="checkbox" name="mqtt_tls" {mqtt_tls}></div>
 <div class="row"><label>Topic:</label><input type="text" name="mqtt_topic" value="{mqtt_topic}"></div>
-<div class="row"><label>Client ID:</label><input type="text" name="mqtt_client_id" value="{mqtt_client_id}"></div>
+<div class="row"><label>Client ID:</label><input type="text" name="mqtt_client_id" value="{mqtt_client_id}"> <span style="margin-left:8px;color:#666">+ random</span></div>
 
 <h3>HTTP POST</h3>
 <div class="row"><label>Bật:</label><input type="checkbox" name="http_enabled" {http_en}></div>

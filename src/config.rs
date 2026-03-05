@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::sync::RwLock;
+use std::sync::{mpsc, RwLock};
 use tokio::sync::watch;
 
 const CONFIG_PATH: &str = "/etc/vgateway.toml";
@@ -113,6 +113,7 @@ impl Config {
 pub struct AppState {
     config: RwLock<Config>,
     config_tx: watch::Sender<()>,
+    mqtt_notify: RwLock<Option<mpsc::Sender<()>>>,
 }
 
 impl AppState {
@@ -123,7 +124,16 @@ impl AppState {
             if config.http.enabled { &config.http.url } else { "disabled" },
             config.uart.port, config.uart.baudrate);
         let (config_tx, _) = watch::channel(());
-        Self { config: RwLock::new(config), config_tx }
+        Self {
+            config: RwLock::new(config),
+            config_tx,
+            mqtt_notify: RwLock::new(None),
+        }
+    }
+
+    /// Set MQTT config change notifier (call once from main)
+    pub fn set_mqtt_notifier(&self, tx: mpsc::Sender<()>) {
+        *self.mqtt_notify.write().unwrap() = Some(tx);
     }
 
     pub fn get(&self) -> Config {
@@ -138,7 +148,11 @@ impl AppState {
     pub fn update(&self, new_config: Config) {
         new_config.save();
         *self.config.write().unwrap() = new_config;
-        let _ = self.config_tx.send(()); // Notify watchers immediately
+        let _ = self.config_tx.send(()); // Notify async watchers
+        // Notify MQTT thread (sync)
+        if let Some(tx) = self.mqtt_notify.read().unwrap().as_ref() {
+            let _ = tx.send(());
+        }
         println!("[Config] Updated, publishers will reconnect");
     }
 }

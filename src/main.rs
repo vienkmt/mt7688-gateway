@@ -29,10 +29,14 @@ async fn main() {
     let (mqtt_tx, mqtt_rx) = std::sync::mpsc::channel::<String>();
     let (http_tx, http_rx) = tokio::sync::mpsc::channel::<String>(64);
 
+    // Create config notify channel for MQTT thread
+    let (config_notify_tx, config_notify_rx) = std::sync::mpsc::channel::<()>();
+    state.set_mqtt_notifier(config_notify_tx);
+
     // Spawn MQTT in a separate OS thread (rumqttc has issues with tokio on MIPS)
     let mqtt_state = state.clone();
     std::thread::spawn(move || {
-        mqtt_publisher::run_sync(mqtt_state, mqtt_rx);
+        mqtt_publisher::run_sync(mqtt_state, mqtt_rx, config_notify_rx);
     });
 
     // Spawn async tasks
