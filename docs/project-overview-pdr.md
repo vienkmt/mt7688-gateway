@@ -11,7 +11,7 @@
 
 The MT7688AN IoT Gateway is an embedded Rust application that transforms a MediaTek LinkIt Smart 7688 (MIPS 24KEc, 580MHz, 256MB RAM) into a capable IoT data aggregator and edge processing node. The firmware:
 
-- Collects data from external devices via UART (e.g., Quectel 4G modem)
+- Collects data from external devices via UART (e.g., sensors, MCU)
 - Publishes to cloud platforms via MQTT and HTTP
 - Provides a web-based management interface for configuration and monitoring
 - Manages network connectivity (DHCP and Static IP modes)
@@ -69,7 +69,7 @@ The MT7688AN IoT Gateway is an embedded Rust application that transforms a Media
 - **Status Monitoring:** Live IP, netmask, gateway, DNS via system commands
 
 ### 4. Data Acquisition & Publishing
-- **UART Reader:** Reads serial data from /dev/ttyS1 (Quectel modem or any device)
+- **UART Reader:** Reads serial data from /dev/ttyS2 (sensors, MCU, or any device)
 - **MQTT Publisher:** Publishes to configurable broker (with TLS support)
 - **HTTP Publisher:** POSTs to configurable endpoint
 - **Threading:** Bounded channels (128 messages) prevent OOM on 64MB device
