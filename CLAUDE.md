@@ -8,16 +8,16 @@ IoT Gateway firmware written in **Rust** for embedded Linux (OpenWrt).
 
 | Component | Specification |
 |-----------|---------------|
-| Board | MediaTek LinkIt Smart 7688 |
-| SoC | MT7688AN (MIPS 24KEc, 580MHz, single-core) |
-| RAM | 256MB DDR2 |
-| Flash | 32MB SPI-NOR (25MB available) |
+| Board | MediaTek MT7628 |
+| SoC | MT7628DAN (MIPS 24KEc, 580MHz, single-core) |
+| RAM | 64MB DDR2 |
+| Flash | 16MB SPI-NOR |
 | Wi-Fi | 2.4GHz 802.11b/g/n (150Mbps) |
 | Interfaces | Ethernet, USB Host, UART x2, SPI, I2C, GPIO |
 
 ## Firmware Environment
 
-- **OS:** OpenWrt 21.02 (Kernel 5.4.171)
+- **OS:** OpenWrt 24.10 stable (Kernel 6.6.x)
 - **Architecture:** ramips/mt76x8 (MIPS)
 - **Network:** LAN 10.10.10.1/24, WAN DHCP
 - **Peripherals:** 2x UART ready, I2C (OLED), GPIO
@@ -62,7 +62,21 @@ cargo check --target mipsel-unknown-linux-musl
 - **HTTP Server:** `spawn_blocking` wrapping tiny-http
 - **Port:** 8889
 - **Config:** /etc/vgateway.toml
-- **Binary:** vgateway
+
+## Workspace Structure
+
+```
+mt7688-gateway/
+├── Cargo.toml          # workspace root (shared profile.release)
+├── vgateway/           # UART Gateway (reference)
+└── ugate/              # Modbus Gateway (active development)
+```
+
+Build commands:
+```bash
+cross +nightly build --target mipsel-unknown-linux-musl --release -p ugate
+cross +nightly build --target mipsel-unknown-linux-musl --release -p vgateway
+```
 
 ## Documentation
 

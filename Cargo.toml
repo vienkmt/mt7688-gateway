@@ -1,24 +1,6 @@
-[package]
-name = "vgateway"
-version = "0.2.0"
-edition = "2021"
-
-[dependencies]
-tokio = { version = "1", default-features = false, features = [
-    "rt",
-    "macros",
-    "time",
-    "sync",
-    "io-util",
-] }
-tiny_http = "0.12"
-libc = "0.2"
-ureq = "2"
-rumqttc = "0.24"
-rustls = "0.22"
-webpki-roots = "0.26"
-serde = { version = "1", features = ["derive"] }
-toml = "0.8"
+[workspace]
+members = ["vgateway", "ugate"]
+resolver = "2"
 
 [profile.release]
 opt-level = "s"
