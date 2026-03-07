@@ -19,6 +19,13 @@ use tokio::sync::broadcast;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    // Khởi tạo syslog logger — log tới /dev/log (OpenWrt logread)
+    syslog::init(
+        syslog::Facility::LOG_DAEMON,
+        log::LevelFilter::Info,
+        Some("ugate"),
+    ).ok();
+
     log::info!("ugate v{} khởi động...", env!("CARGO_PKG_VERSION"));
 
     // Đồng bộ đồng hồ hệ thống trước khi kết nối TLS (cần time chính xác cho cert)
