@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ugate</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+.app{max-width:800px;margin:0 auto;padding:16px}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #334155;margin-bottom:16px}
+header h1{font-size:1.2rem;color:#38bdf8}
+header .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+header .dot.on{background:#22c55e}
+header .dot.off{background:#ef4444}
+nav{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+nav button{padding:6px 14px;border:1px solid #334155;background:#1e293b;color:#94a3b8;border-radius:6px;cursor:pointer;font-size:.8rem}
+nav button.active{background:#334155;color:#f1f5f9;border-color:#475569}
+.card{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:16px;margin-bottom:12px}
+.card h3{font-size:.9rem;color:#94a3b8;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid div{display:flex;justify-content:space-between;padding:4px 0}
+.grid label{color:#64748b;font-size:.85rem}
+.grid span{color:#e2e8f0;font-size:.85rem;font-weight:500}
+.gpio-btns{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.gpio-btn{padding:12px;border:2px solid #334155;border-radius:8px;cursor:pointer;text-align:center;font-weight:600;transition:all .15s}
+.gpio-btn.on{background:#166534;border-color:#22c55e;color:#22c55e}
+.gpio-btn.off{background:#1e293b;border-color:#475569;color:#94a3b8}
+.login{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px}
+.login input{padding:10px 16px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;border-radius:6px;width:240px;font-size:1rem}
+.login button{padding:10px 32px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-size:1rem}
+.login .error{color:#ef4444;font-size:.85rem}
+.config-form{display:flex;flex-direction:column;gap:10px}
+.config-form label{display:flex;justify-content:space-between;align-items:center;font-size:.85rem;color:#94a3b8}
+.config-form input[type=text],.config-form input[type=number],.config-form input[type=password],.config-form select{padding:6px 10px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:4px;width:200px;font-size:.85rem}
+.save-btn{padding:8px 24px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;align-self:flex-end}
+.stream{background:#0f172a;border:1px solid #334155;border-radius:4px;padding:8px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:.75rem;color:#94a3b8}
+.stream div{padding:2px 0;border-bottom:1px solid #1e293b}
+/* iOS-style switch */
+.sw{position:relative;width:44px;height:24px;flex-shrink:0}
+.sw input{opacity:0;width:0;height:0}
+.sw .sl{position:absolute;cursor:pointer;inset:0;background:#475569;border-radius:12px;transition:.2s}
+.sw .sl:before{content:'';position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s}
+.sw input:checked+.sl{background:#22c55e}
+.sw input:checked+.sl:before{transform:translateX(20px)}
+/* Progress bar */
+.pbar{height:8px;background:#334155;border-radius:4px;overflow:hidden;flex:1;margin-left:8px}
+.pbar .fill{height:100%;border-radius:4px;transition:width .3s}
+.pbar-row{display:flex;align-items:center;gap:8px;padding:4px 0}
+.pbar-row label{color:#64748b;font-size:.85rem;min-width:60px}
+.pbar-row span{color:#e2e8f0;font-size:.85rem;font-weight:500;min-width:50px;text-align:right}
+/* Toast */
+.toast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:16px 40px;border-radius:10px;font-size:1.1rem;font-weight:600;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;text-align:center;min-width:200px}
+.toast.show{opacity:1}
+.toast.ok{background:#166534;color:#22c55e;border:2px solid #22c55e}
+.toast.err{background:#7f1d1d;color:#ef4444;border:2px solid #ef4444}
+/* Channel badge */
+.ch-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.7rem;font-weight:600;text-transform:uppercase}
+.ch-badge.connected{background:#166534;color:#22c55e}
+.ch-badge.disconnected{background:#7f1d1d;color:#ef4444}
+.ch-badge.disabled{background:#334155;color:#64748b}
+</style>
+</head>
+<body>
+<div id="app" class="app"></div>
+<script>
+const S={page:'login',ws:null,connected:false,status:{},config:null,stream:[],loginErr:'',password:'',hexView:false};
+function $(s,p){return(p||document).querySelector(s)}
+function h(tag,attrs,...ch){
+  const el=document.createElement(tag);
+  if(attrs)Object.entries(attrs).forEach(([k,v])=>{
+    if(k.startsWith('on'))el.addEventListener(k.slice(2),v);
+    else if(k==='cls')el.className=v;
+    else el.setAttribute(k,v);
+  });
+  ch.flat().forEach(c=>el.append(typeof c==='string'?c:c));
+  return el;
+}
+function render(){
+  const root=$('#app');root.innerHTML='';
+  if(S.page==='login'){renderLogin(root);return}
+  const pg=S.page;
+  root.append(
+    h('header',{},h('h1',{},'ugate'),h('span',{},h('span',{cls:'dot '+(S.connected?'on':'off')}),'WS')),
+    renderNav(),
+    pg==='status'?renderStatus():pg==='config'?renderConfig():pg==='uart'?renderUart():pg==='data'?renderData():h('div',{})
+  );
+}
+function renderLogin(root){
+  const inp=h('input',{type:'password',placeholder:'Mật khẩu',value:S.password,oninput:e=>S.password=e.target.value,onkeydown:e=>{if(e.key==='Enter')doLogin()}});
+  root.append(h('div',{cls:'login'},h('h1',{style:'color:#38bdf8;font-size:1.5rem'},'ugate'),inp,
+    h('button',{onclick:doLogin},'Đăng nhập'),
+    S.loginErr?h('div',{cls:'error'},S.loginErr):h('span',{})
+  ));
+  setTimeout(()=>inp.focus(),100);
+}
+async function doLogin(){
+  const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:S.password})});
+  if(r.ok){S.page='status';S.loginErr='';connectWS();render()}
+  else{S.loginErr='Sai mật khẩu';render()}
+}
+function renderNav(){
+  const tabs=[['status','Trạng thái'],['config','Cấu hình'],['uart','UART'],['data','Dữ liệu']];
+  return h('nav',{},...tabs.map(([id,label])=>h('button',{cls:S.page===id?'active':'',onclick:()=>{S.page=id;render()}},label)));
+}
+// --- Status page ---
+function pbar(label,val,max,color,unit){
+  const pct=max>0?Math.min(100,val/max*100):0;
+  return h('div',{cls:'pbar-row'},
+    h('label',{},label),
+    h('div',{cls:'pbar'},h('div',{cls:'fill',style:'width:'+pct+'%;background:'+color})),
+    h('span',{},val+(unit||'')+(max?'/'+max:''))
+  );
+}
+function chBadge(state,enabled){
+  if(enabled===false)return h('span',{cls:'ch-badge disabled'},'off');
+  if(state==='connected')return h('span',{cls:'ch-badge connected'},'connected');
+  if(state==='waiting')return h('span',{cls:'ch-badge disconnected'},'waiting');
+  if(state==='disabled')return h('span',{cls:'ch-badge disabled'},'off');
+  return h('span',{cls:'ch-badge disconnected'},state||'disconnected');
+}
+function renderStatus(){
+  const s=S.status||{};const u=s.uart||{};const m=s.mqtt||{};const hp=s.http||{};const t=s.tcp||{};const g=s.gpio||[];
+  const cpu=s.cpu||0;const ru=s.ram_used||0;const rt=s.ram_total||0;
+  return h('div',{},
+    h('div',{cls:'card'},h('h3',{},'Hệ thống'),
+      h('div',{cls:'grid'},
+        h('div',{},h('label',{},'Phiên bản'),h('span',{},s.version||'-')),
+        h('div',{},h('label',{},'Uptime'),h('span',{},s.uptime||'-'))
+      ),
+      pbar('CPU',cpu,100,cpu>80?'#ef4444':cpu>50?'#f59e0b':'#22c55e','%'),
+      pbar('RAM',ru,rt,ru/rt>0.8?'#ef4444':ru/rt>0.5?'#f59e0b':'#22c55e',' MB')
+    ),
+    h('div',{cls:'card'},
+      h('h3',{style:'display:flex;justify-content:space-between;align-items:center'},'Kênh truyền',
+        h('div',{style:'display:flex;gap:6px;flex-wrap:wrap'},
+          h('span',{style:'font-size:.7rem;color:#64748b'},'MQTT:'),chBadge(m.state,m.enabled),
+          h('span',{style:'font-size:.7rem;color:#64748b;margin-left:6px'},'HTTP:'),chBadge(hp.state,hp.enabled),
+          h('span',{style:'font-size:.7rem;color:#64748b;margin-left:6px'},'TCP:'),chBadge(t.state,t.enabled)
+        )
+      ),
+      h('div',{cls:'grid'},
+        h('div',{},h('label',{},'UART RX'),h('span',{},''+(u.rx_frames??0)+' frames / '+(u.rx_bytes??0)+' B')),
+        h('div',{},h('label',{},'UART TX'),h('span',{},''+(u.tx_frames??0)+' frames / '+(u.tx_bytes??0)+' B')),
+        h('div',{},h('label',{},'UART config'),h('span',{},u.config||'-')),
+        h('div',{},h('label',{},'MQTT pub'),h('span',{},''+(m.published??0)+' ok / '+(m.failed??0)+' fail')),
+        h('div',{},h('label',{},'HTTP sent'),h('span',{},''+(hp.sent??0)+' ok / '+(hp.failed??0)+' fail')),
+        h('div',{},h('label',{},'TCP conn'),h('span',{},''+(t.connections??0)))
+      )
+    ),
+    h('div',{cls:'card'},h('h3',{},'GPIO'),h('div',{cls:'gpio-btns'},...[0,1,2,3].map(i=>
+      h('div',{cls:'gpio-btn '+(g[i]?'on':'off'),onclick:()=>sendGpio(i+1,'toggle')},'Pin '+(i+1)+'\n'+(g[i]?'ON':'OFF'))
+    )))
+  );
+}
+// --- Config page ---
+function renderConfig(){
+  if(!S.config){loadConfig();return h('div',{cls:'card'},'Đang tải...')}
+  const c=S.config;
+  return h('div',{},
+    configSection('General',[
+      txt('Tên thiết bị',c.general,'device_name'),num('Interval (s)',c.general,'interval_secs')
+    ]),
+    configSection('MQTT',[
+      sw('Bật',c.mqtt,'enabled'),txt('Broker',c.mqtt,'broker'),num('Port',c.mqtt,'port'),
+      sw('TLS',c.mqtt,'tls'),txt('Publish Topic',c.mqtt,'topic'),txt('Subscribe Topic',c.mqtt,'sub_topic'),
+      txt('Client ID',c.mqtt,'client_id'),txt('Username',c.mqtt,'username'),pwd('Password',c.mqtt,'password'),
+      sel('QoS',c.mqtt,'qos',[['0','0'],['1','1'],['2','2']])
+    ]),
+    configSection('HTTP',[
+      sw('Bật',c.http,'enabled'),
+      sel('Method',c.http,'method',[['post','POST'],['get','GET']]),
+      txt('URL',c.http,'url')
+    ]),
+    configSection('TCP',[
+      sw('Bật',c.tcp,'enabled'),
+      sel('Mode',c.tcp,'mode',[['server','Server (lắng nghe)'],['client','Client (kết nối tới server)'],['both','Both']]),
+      ...(c.tcp.mode==='server'||c.tcp.mode==='both'?[num('Listen Port (cổng lắng nghe)',c.tcp,'server_port')]:[]),
+      ...(c.tcp.mode==='client'||c.tcp.mode==='both'?[txt('Server Address (IP/hostname)',c.tcp,'client_host'),num('Server Port (cổng đích)',c.tcp,'client_port')]:[])
+    ]),
+    h('button',{cls:'save-btn',onclick:saveConfig},'Lưu cấu hình')
+  );
+}
+// --- UART page (tách riêng) ---
+function renderUart(){
+  if(!S.config){loadConfig();return h('div',{cls:'card'},'Đang tải...')}
+  const c=S.config;
+  const fm=c.uart.frame_mode;
+  const bauds=[['9600','9600'],['19200','19200'],['38400','38400'],['57600','57600'],['115200','115200'],['230400','230400'],['460800','460800'],['921600','921600']];
+  return h('div',{},
+    h('div',{cls:'card config-form'},h('h3',{},'UART'),
+      sel('Baudrate',c.uart,'baudrate',bauds),
+      sel('Data Bits',c.uart,'data_bits',[['7','7'],['8','8']]),
+      sel('Parity',c.uart,'parity',[['none','None'],['even','Even'],['odd','Odd']]),
+      sel('Stop Bits',c.uart,'stop_bits',[['1','1'],['2','2']]),
+      sel('Frame Mode',c.uart,'frame_mode',[['none','None (Gap)'],['frame','Frame (Fixed)'],['modbus','Modbus RTU']],()=>render()),
+      ...(fm==='none'?[num('Gap (ms)',c.uart,'gap_ms')]:[]),
+      ...(fm==='frame'?[num('Frame Length',c.uart,'frame_length'),num('Frame Timeout (ms)',c.uart,'frame_timeout_ms')]:[]),
+      ...(fm==='modbus'?[num('Frame Timeout (ms)',c.uart,'frame_timeout_ms')]:[])
+    ),
+    h('button',{cls:'save-btn',onclick:saveConfig},'Lưu cấu hình')
+  );
+}
+function configSection(title,fields){return h('div',{cls:'card config-form'},h('h3',{},title),...fields)}
+function sw(label,obj,key){
+  const inp=h('input',{type:'checkbox',...(obj[key]?{checked:''}:{}),onchange:e=>{obj[key]=e.target.checked}});
+  return h('label',{},label,h('label',{cls:'sw'},inp,h('span',{cls:'sl'})));
+}
+function txt(label,obj,key){
+  return h('label',{},label,h('input',{type:'text',value:obj[key]||'',oninput:e=>{obj[key]=e.target.value}}));
+}
+function num(label,obj,key){
+  return h('label',{},label,h('input',{type:'number',value:obj[key]||0,oninput:e=>{obj[key]=+e.target.value}}));
+}
+function pwd(label,obj,key){
+  return h('label',{},label,h('input',{type:'password',value:obj[key]||'',oninput:e=>{obj[key]=e.target.value}}));
+}
+function sel(label,obj,key,opts,cb){
+  const s=h('select',{onchange:e=>{obj[key]=e.target.value;if(cb)cb()}});
+  opts.forEach(([v,t])=>{const o=h('option',{value:v},t);if(''+obj[key]===v)o.selected=true;s.append(o)});
+  return h('label',{},label,s);
+}
+async function loadConfig(){
+  const r=await fetch('/api/config');if(r.ok){S.config=await r.json();render();}
+}
+function toast(msg,type){
+  let t=document.getElementById('toast');
+  if(!t){t=document.createElement('div');t.id='toast';t.className='toast';document.body.append(t)}
+  t.textContent=msg;t.className='toast '+(type||'ok')+' show';
+  clearTimeout(t._tid);t._tid=setTimeout(()=>t.classList.remove('show'),2500);
+}
+async function saveConfig(){
+  try{
+    const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(S.config)});
+    if(r.ok)toast('Đã lưu cấu hình','ok');else toast('Lưu thất bại','err');
+  }catch(e){toast('Lỗi kết nối','err')}
+}
+function fmtRow(d){
+  if(!d||!d.type)return null;
+  const isRx=d.dir!=='tx';
+  let content='';
+  if(d.hex){
+    if(S.hexView){
+      content=d.hex.match(/.{1,2}/g).join(' ').toUpperCase();
+    }else{
+      const bytes=d.hex.match(/.{1,2}/g)||[];
+      content=bytes.map(b=>{const c=parseInt(b,16);return c>=32&&c<127?String.fromCharCode(c):c===10?'':c===13?'':''}).join('');
+    }
+  }
+  const row=h('div',{style:'display:flex;gap:8px;padding:1px 0;border-bottom:1px solid #1e293b'},
+    h('span',{style:'color:#64748b;min-width:64px'},d._ts||''),
+    h('span',{style:'color:'+(isRx?'#22c55e':'#f59e0b')+';font-weight:600;min-width:20px'},isRx?'RX':'TX'),
+    h('span',{style:'color:#38bdf8;min-width:28px'},'['+d.len+']'),
+    h('span',{},content)
+  );
+  return row;
+}
+let _streamEl=null,_rendered=0;
+function renderData(){
+  // Incremental: chỉ append rows mới thay vì rebuild toàn bộ
+  if(_streamEl&&S.page==='data'){
+    while(_rendered<S.stream.length){
+      const row=fmtRow(S.stream[_rendered]);
+      if(row)_streamEl.append(row);
+      _rendered++;
+    }
+    _streamEl.scrollTop=_streamEl.scrollHeight;
+    return _streamEl.parentElement;
+  }
+  _rendered=0;
+  _streamEl=h('div',{cls:'stream',style:'max-height:calc(100vh - 220px);overflow-y:auto'});
+  S.stream.forEach((d,i)=>{const r=fmtRow(d);if(r)_streamEl.append(r);_rendered=i+1});
+  setTimeout(()=>{if(_streamEl)_streamEl.scrollTop=_streamEl.scrollHeight},10);
+  const toolbar=h('div',{style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'},
+    h('h3',{style:'margin:0;font-size:.9rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em'},'UART Real-time'),
+    h('div',{style:'display:flex;align-items:center;gap:12px'},
+      h('label',{style:'font-size:.8rem;color:#94a3b8;display:flex;align-items:center;gap:6px'},
+        'HEX',h('label',{cls:'sw'},h('input',{type:'checkbox',...(!S.hexView?{checked:''}:{}),onchange:e=>{S.hexView=!e.target.checked;_streamEl=null;_rendered=0;render()}}),h('span',{cls:'sl'})),'TEXT'
+      ),
+      h('button',{style:'padding:4px 12px;background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:4px;cursor:pointer;font-size:.75rem',onclick:()=>{S.stream=[];_streamEl=null;_rendered=0;render()}},'Xoá')
+    )
+  );
+  return h('div',{cls:'card',style:'padding-bottom:8px'},toolbar,_streamEl);
+}
+function connectWS(){
+  if(S.ws)S.ws.close();
+  const ws=new WebSocket('ws://'+location.host+'/ws');
+  ws.onopen=()=>{S.connected=true;render()};
+  ws.onclose=()=>{S.connected=false;render();setTimeout(connectWS,3000)};
+  ws.onmessage=e=>{
+    try{
+      const d=JSON.parse(e.data);
+      if(d.type==='status'){S.status=d;if(S.page==='status')render()}
+      else{
+        d._ts=new Date().toLocaleTimeString('vi',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        S.stream.push(d);if(S.stream.length>200){S.stream.shift();_rendered=Math.max(0,_rendered-1)}
+        if(S.page==='data'&&_streamEl){
+          const row=fmtRow(d);if(row)_streamEl.append(row);_rendered=S.stream.length;
+          _streamEl.scrollTop=_streamEl.scrollHeight;
+        }
+      }
+    }catch(_){}
+  };
+  S.ws=ws;
+}
+function sendGpio(pin,state){
+  if(S.ws&&S.ws.readyState===1)S.ws.send(JSON.stringify({cmd:'gpio',pin:''+pin,state}));
+}
+async function checkSession(){
+  try{const r=await fetch('/api/status');if(r.ok){S.page='status';connectWS()}}catch(_){}
+  render();
+}
+checkSession();
+</script>
+</body>
+</html>

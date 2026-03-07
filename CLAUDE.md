@@ -60,8 +60,8 @@ cargo check --target mipsel-unknown-linux-musl
   - UART → HTTP: `tokio::sync::mpsc::channel` (async, capacity 64)
   - Config changes: `tokio::sync::watch<()>` (notify-only, MQTT polls every 2s)
 - **HTTP Server:** `spawn_blocking` wrapping tiny-http
-- **Port:** 8889
-- **Config:** /etc/vgateway.toml
+- **Port:** 8888 (ugate), 8889 (vgateway)
+- **Config:** UCI `/etc/config/ugate` (ugate), TOML `/etc/vgateway.toml` (vgateway)
 
 ## Workspace Structure
 
@@ -84,3 +84,8 @@ See `./docs` for detailed documentation:
 - `project-overview-pdr.md` — Requirements
 - `system-architecture.md` — Architecture
 - `code-standards.md` — Coding conventions
+
+## MIPS/Rust Notes
+
+See `./mips-rust-notes/` for known issues and gotchas:
+- `bugs-and-gotchas.md` — Bugs hay gặp khi dev Rust trên MIPS/OpenWrt (AtomicU64, ioctl, WS handshake, ...)

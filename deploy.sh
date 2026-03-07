@@ -22,7 +22,7 @@ set -e  # Dừng ngay nếu có lỗi
 # CẤU HÌNH - Thay đổi theo thiết bị của bạn
 # ============================================
 
-HOST="root@192.168.2.168"       # Địa chỉ SSH thiết bị
+HOST="root@192.168.2.171"       # Địa chỉ SSH thiết bị
 TARGET="mipsel-unknown-linux-musl"
 REMOTE_DIR="/usr/bin"           # Thư mục cài đặt trên thiết bị
 
@@ -143,9 +143,22 @@ if ssh "$HOST" "[ -f $INIT_SCRIPT ]"; then
     ssh "$HOST" "$INIT_SCRIPT restart"
     echo "✓ Đã restart service"
 else
-    # Chạy trực tiếp nếu không có init script
-    ssh "$HOST" "nohup $REMOTE_PATH > /var/log/$APP.log 2>&1 &"
-    echo "✓ Đã chạy daemon"
+    # Tạo init script rồi khởi động (OpenWrt không có nohup)
+    ssh "$HOST" "cat > /etc/init.d/$APP << 'INITEOF'
+#!/bin/sh /etc/rc.common
+START=99
+STOP=10
+USE_PROCD=1
+start_service() {
+    procd_open_instance
+    procd_set_param command $REMOTE_PATH
+    procd_set_param respawn
+    procd_set_param stderr 1
+    procd_close_instance
+}
+INITEOF
+chmod +x /etc/init.d/$APP && /etc/init.d/$APP enable && /etc/init.d/$APP start"
+    echo "✓ Đã tạo init script và khởi động"
 fi
 
 # ============================================
@@ -153,9 +166,9 @@ fi
 # ============================================
 
 echo ""
-sleep 2
+sleep 8
 
-if ssh "$HOST" "pgrep -x $APP" &>/dev/null; then
+if ssh "$HOST" "pgrep $APP" &>/dev/null; then
     echo "┌─────────────────────────────────────┐"
     echo "│  ✓ $APP đang chạy!"
     echo "└─────────────────────────────────────┘"

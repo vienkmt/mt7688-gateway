@@ -146,29 +146,75 @@ export const useConfigStore = defineStore('config', () => {
 
 ### 4. Create views
 
-**DashboardView.vue:**
+**DashboardView.vue (Status Page - default after login):**
 ```vue
 <template>
-  <div class="dashboard">
-    <StatusCard title="UART" :connected="wsConnected" />
-    <StatusCard title="MQTT" :connected="mqttStatus" />
+  <div class="status-page">
+    <!-- System State -->
+    <section class="system-state">
+      <h3>System State</h3>
+      <div class="grid">
+        <div><label>Product</label><span>ugate</span></div>
+        <div><label>MAC</label><span>{{ status.mac }}</span></div>
+        <div><label>IP</label><span>{{ status.ip }}</span></div>
+        <div><label>Gateway</label><span>{{ status.gateway }}</span></div>
+        <div><label>Firmware</label><span>{{ status.version }}</span></div>
+        <div><label>Uptime</label><span>{{ status.uptime }}</span></div>
+        <div><label>CPU</label><span>{{ status.cpu }}%</span></div>
+        <div><label>RAM</label><span>{{ status.ram_used }}/{{ status.ram_total }} MB</span></div>
+        <div><label>Flash</label><span>{{ status.flash_used }}/{{ status.flash_total }} MB</span></div>
+        <div><label>WiFi</label><span>{{ status.wifi_state }} ({{ status.wifi_rssi }} dBm)</span></div>
+      </div>
+    </section>
 
-    <div class="data-stream">
-      <h3>Live Data</h3>
-      <div v-for="(line, i) in data" :key="i">{{ line }}</div>
-    </div>
+    <!-- Serial Port State -->
+    <section class="serial-state">
+      <h3>Serial Port State</h3>
+      <div class="grid">
+        <div><label>Received Bytes</label><span>{{ status.uart.rx_bytes }}</span></div>
+        <div><label>Received Frames</label><span>{{ status.uart.rx_frames }}</span></div>
+        <div><label>Sent Bytes</label><span>{{ status.uart.tx_bytes }}</span></div>
+        <div><label>Sent Frames</label><span>{{ status.uart.tx_frames }}</span></div>
+        <div><label>Failed</label><span>{{ status.uart.failed }}</span></div>
+        <div><label>Config</label><span>{{ status.uart.config }}</span></div>
+      </div>
+    </section>
 
-    <div class="gpio-controls">
-      <GpioButton v-for="i in 4" :key="i" :pin="i-1" @toggle="toggleGpio" />
-    </div>
+    <!-- Channel States -->
+    <section v-if="status.mqtt.enabled" class="channel-state">
+      <h3>MQTT State</h3>
+      <div class="grid">
+        <div><label>State</label><span>{{ status.mqtt.state }}</span></div>
+        <div><label>Published</label><span>{{ status.mqtt.published }}</span></div>
+        <div><label>Failed</label><span>{{ status.mqtt.failed }}</span></div>
+      </div>
+    </section>
+
+    <section v-if="status.tcp.enabled" class="channel-state">
+      <h3>TCP State</h3>
+      <div class="grid">
+        <div><label>Mode</label><span>{{ status.tcp.mode }}</span></div>
+        <div><label>State</label><span>{{ status.tcp.state }}</span></div>
+        <div><label>Connections</label><span>{{ status.tcp.connections }}</span></div>
+      </div>
+    </section>
+
+    <!-- GPIO Controls -->
+    <section class="gpio-controls">
+      <h3>GPIO Outputs</h3>
+      <div class="buttons">
+        <GpioButton v-for="i in 4" :key="i" :pin="i" :state="status.gpio[i-1]" @toggle="toggleGpio" />
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 
-const { data, connected: wsConnected, connect, sendGpio } = useWebSocket()
+const { status, connect, sendGpio } = useWebSocket()
+// WebSocket sends status every 1 second
 
 function toggleGpio(pin: number) {
   sendGpio(pin, 'toggle')
@@ -187,6 +233,16 @@ onMounted(connect)
       <label><input type="checkbox" v-model="config.mqtt.enabled"> Enabled</label>
       <input v-model="config.mqtt.broker" placeholder="Broker">
       <input v-model.number="config.mqtt.port" type="number" placeholder="Port">
+      <label><input type="checkbox" v-model="config.mqtt.tls"> TLS</label>
+      <input v-model="config.mqtt.topic" placeholder="Topic">
+      <input v-model="config.mqtt.client_id" placeholder="Client ID">
+      <label>Publish QoS:
+        <select v-model.number="config.mqtt.qos">
+          <option :value="0">0 - At most once</option>
+          <option :value="1">1 - At least once</option>
+          <option :value="2">2 - Exactly once</option>
+        </select>
+      </label>
     </section>
 
     <section>
@@ -205,6 +261,48 @@ onMounted(connect)
       </select>
     </section>
 
+    <section>
+      <h3>UART / Serial</h3>
+      <small>Device: /dev/ttyS1 (hardcoded)</small>
+      <input v-model.number="config.uart.baudrate" type="number" placeholder="Baudrate">
+      <input v-model.number="config.uart.buffer_size" type="number" placeholder="Buffer Size">
+
+      <h4>Protocol Settings</h4>
+      <select v-model="config.uart.protocol">
+        <option value="none">None (Gap-based)</option>
+        <option value="frame">Frame (Fixed-length)</option>
+        <option value="modbus">Modbus RTU</option>
+      </select>
+
+      <!-- Protocol = None -->
+      <div v-if="config.uart.protocol === 'none'">
+        <label>Gap (ms): <input v-model.number="config.uart.gap_ms" type="number"></label>
+      </div>
+
+      <!-- Protocol = Frame -->
+      <div v-if="config.uart.protocol === 'frame'">
+        <label>Frame Length: <input v-model.number="config.uart.frame_length" type="number"></label>
+        <label>Frame Timeout (ms): <input v-model.number="config.uart.frame_timeout" type="number"></label>
+        <label><input type="checkbox" v-model="config.uart.tag_enabled"> Enable Tags</label>
+        <div v-if="config.uart.tag_enabled">
+          <label>Tag Head: <input v-model="config.uart.tag_head" placeholder="0x02"></label>
+          <label>Tag Tail: <input v-model="config.uart.tag_tail" placeholder="0x03"></label>
+        </div>
+      </div>
+
+      <!-- Protocol = Modbus -->
+      <div v-if="config.uart.protocol === 'modbus'">
+        <label>Slave Address: <input v-model="config.uart.slave_addr" placeholder="0x01"></label>
+        <small>Gap auto-calculated from baudrate (3.5T)</small>
+      </div>
+    </section>
+
+    <section>
+      <h3>Security</h3>
+      <input v-model="newPassword" type="password" placeholder="New Password">
+      <button type="button" @click="changePassword">Change Password</button>
+    </section>
+
     <button type="submit">Save</button>
   </form>
 </template>
@@ -218,8 +316,20 @@ const config = computed(() => store.config)
 
 onMounted(() => store.load())
 
+const newPassword = ref('')
+
 function save() {
   store.save(config.value)
+}
+
+async function changePassword() {
+  if (!newPassword.value) return
+  await fetch('/api/password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: newPassword.value }),
+  })
+  newPassword.value = ''
 }
 </script>
 ```

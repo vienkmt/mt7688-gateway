@@ -3,16 +3,16 @@
 **Priority:** High
 **Status:** pending
 **Effort:** 2 days
-**Depends on:** Phase 0 (axum test pass)
+**Depends on:** -
 
 ## Context
 
-Copy và refactor core modules từ vgateway. Đây là foundation cho tất cả phases sau.
+Copy và refactor core modules từ vgateway. Foundation cho tất cả phases sau.
 
 ## Objective
 
 Setup project structure với:
-- Config management (AppState, Config structs)
+- Config management (AppState, Config structs) — UCI only
 - UCI wrapper
 - UART reader (AsyncFd + epoll)
 - Channel infrastructure
@@ -24,6 +24,7 @@ ugate/src/
 ├── main.rs
 ├── config.rs      # AppState, Config (from vgateway)
 ├── uci.rs         # UCI wrapper (from vgateway)
+├── time_sync.rs   # Sync clock via HTTP Date (from vgateway) - MUST run before TLS!
 ├── uart/
 │   ├── mod.rs
 │   ├── reader.rs  # AsyncFd + epoll
@@ -32,6 +33,32 @@ ugate/src/
 ```
 
 ## Implementation Steps
+
+### 0. Copy time_sync.rs (CRITICAL for TLS)
+
+**Vấn đề:** TLS certificate validation cần system time chính xác. Nếu time sai → TLS handshake fail.
+
+**Giải pháp vgateway:** Sync time via HTTP Date header (plain HTTP, không TLS):
+```rust
+// main.rs - PHẢI chạy đầu tiên!
+time_sync::sync_time();  // Sync clock trước khi kết nối TLS
+
+// time_sync.rs
+pub fn sync_time() {
+    // Plain HTTP (no TLS) - tránh chicken-and-egg
+    let resp = ureq::head("http://www.google.com").call()?;
+    let date_str = resp.header("date")?;  // "Thu, 06 Feb 2026 11:30:00 GMT"
+
+    // Parse → unix timestamp → settimeofday()
+    let ts = parse_http_date(&date_str)?;
+    unsafe { libc::settimeofday(&tv, null()); }
+}
+```
+
+**Flow:**
+```
+Startup → time_sync() → [TLS ready] → MQTT/HTTP connections
+```
 
 ### 1. Copy & refactor config.rs
 
@@ -76,25 +103,60 @@ pub struct WebConfig {
 
 Direct copy từ vgateway, no changes needed.
 
-### 3. Create uart/reader.rs
+### 3. UART Frame Detection — Technical Spec
 
-Copy từ vgateway/uart_reader.rs, refactor:
-- Extract to separate module
-- Add command detection (GPIO commands)
-- Return parsed frames
+#### Protocol Modes
 
-```rust
-pub enum UartFrame {
-    Data(String),           // Regular data
-    GpioCommand(u8, bool),  // GPIO pin, state
-}
+| Mode | Trigger | Use case |
+|------|---------|----------|
+| none | Gap silence | Legacy, debug, unknown protocol |
+| frame | Length/Timeout/Delimiter | Fixed protocol, custom MCU |
+| modbus | State machine + CRC | Modbus RTU devices |
 
-pub async fn run(
-    state: Arc<AppState>,
-    data_tx: broadcast::Sender<String>,
-    gpio_tx: mpsc::Sender<GpioCommand>,
-) { ... }
+#### Module Structure
+
 ```
+uart/
+├── mod.rs
+├── reader.rs      # AsyncFd + byte pump
+├── framer.rs      # Frame detection trait
+│   ├── GapFramer      (none)
+│   ├── FixedFramer    (frame)
+│   └── ModbusFramer   (modbus)
+├── modbus.rs      # Modbus state machine + CRC16
+└── writer.rs      # TX to MCU
+```
+
+#### Mode 1: None (Gap-based)
+```
+Byte → buffer → reset gap timer
+Gap timer expire → flush → fan-out
+Buffer full (512B) → flush + warn
+```
+
+#### Mode 2: Frame (Fixed-length + Delimiter)
+```
+Complete when ANY:
+  - buf.len() >= frame_length
+  - elapsed >= frame_timeout
+  - tag_enabled && byte == tag_tail
+
+If tag_head enabled: skip bytes until tag_head
+```
+
+#### Mode 3: Modbus RTU
+```
+State: IDLE → ADDR → FUNC → DATA → CRC → fan-out/drop
+Gap time: 3.5T based on baudrate (9600→4ms, 115200→1ms)
+CRC: CRC-16/IBM (0xA001, little-endian)
+Supported: 0x03, 0x04 (Read Registers)
+```
+
+#### Common Rules
+- Raw termios (no canonical, echo, flow)
+- Non-blocking read + 1ms tick
+- Buffer overflow → flush + warn
+- Partial frame timeout → drop + warn
 
 ### 4. Create uart/writer.rs
 
@@ -158,14 +220,24 @@ let (gpio_tx, gpio_rx) = tokio::sync::mpsc::channel::<GpioCommand>(16);
 ## Dependencies to Add
 
 ```toml
+[dependencies]
 tokio = { version = "1", features = ["rt", "net", "io-util", "sync", "time", "fs"] }
 serde = { version = "1", features = ["derive"] }
-toml = "0.8"
+log = "0.4"
+thiserror = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
 ```
 
 ## Todo
 
-- [ ] Copy config.rs từ vgateway
+- [ ] Setup Cargo.toml với profile.release
+- [ ] Copy config.rs từ vgateway, adapt for UCI
 - [ ] Extend Config với TcpConfig, GpioConfig, WebConfig
 - [ ] Copy uci.rs từ vgateway
 - [ ] Create uart/mod.rs
@@ -179,10 +251,10 @@ toml = "0.8"
 ## Success Criteria
 
 - [ ] Project compiles
-- [ ] Config loads from /etc/ugate.toml
+- [ ] Config loads from UCI `/etc/config/ugate`
 - [ ] UCI wrapper works
 - [ ] UART reader starts without crash
 
 ## Next Phase
 
-Phase 2: Channels (MQTT, HTTP, TCP)
+Phase 2a: MQTT + HTTP Channels

@@ -202,46 +202,63 @@ start_service() {
 }
 ```
 
-### 4. Create default config
+### 4. Create default UCI config
 
-```toml
-# /etc/ugate.toml
+```
+# /etc/config/ugate
 
-[mqtt]
-enabled = false
-broker = "mqtt.example.com"
-port = 8883
-tls = true
-topic = "iot/gateway"
-client_id = "ugate-001"
+config mqtt
+    option enabled '0'
+    option broker 'mqtt.example.com'
+    option port '8883'
+    option tls '1'
+    option topic 'iot/gateway'
+    option client_id 'ugate-001'
 
-[http]
-enabled = false
-url = "https://api.example.com/data"
+config http
+    option enabled '0'
+    option url 'https://api.example.com/data'
 
-[tcp]
-enabled = false
-mode = "server"
-server_port = 9000
-client_host = ""
-client_port = 0
+config tcp
+    option enabled '0'
+    option mode 'server'
+    option server_port '9000'
+    option client_host ''
+    option client_port '0'
 
-[uart]
-enabled = true
-port = "/dev/ttyS2"
-baudrate = 115200
+config uart
+    # device hardcoded: /dev/ttyS1
+    option baudrate '115200'
+    option buffer_size '512'
+    # Protocol: none | frame | modbus
+    option protocol 'none'
+    # Gap-based (none/modbus)
+    option gap_ms '10'
+    # Frame mode
+    option frame_length '16'
+    option frame_timeout '100'
+    option tag_enabled '0'
+    option tag_head '0x00'
+    option tag_tail '0x0A'
+    # Modbus mode
+    option slave_addr '0x01'
 
-[gpio]
-pins = [11, 12, 13, 14]
-led_pin = 44
+config gpio
+    option chip 'gpiochip0'
+    list output '11'
+    list output '12'
+    list output '14'
+    list output '15'
+    option heartbeat '44'
+    option heartbeat_interval '500'
 
-[web]
-port = 8889
-password = "admin"
-max_ws_connections = 8
+config web
+    option port '8888'
+    option password 'admin'
+    option max_ws_connections '8'
 
-[general]
-interval_secs = 3
+config general
+    option interval_secs '3'
 ```
 
 ## Documentation Updates
@@ -258,7 +275,7 @@ interval_secs = 3
 | scripts/test.sh | Integration test |
 | scripts/deploy.sh | Deploy script |
 | configs/ugate.init | OpenWrt init.d |
-| configs/ugate.toml | Default config |
+| configs/ugate | Default UCI config |
 
 ## Todo
 

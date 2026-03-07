@@ -4,4 +4,21 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Thêm sau khi cần
+tokio = { version = "1", features = ["rt", "net", "io-util", "sync", "time", "fs", "macros", "signal"] }
+serde = { version = "1", features = ["derive"] }
+log = "0.4"
+thiserror = "1"
+libc = "0.2"
+ureq = { version = "2", features = ["tls"] }
+rumqttc = "0.24"
+rustls = "0.22"
+webpki-roots = "0.26"
+tiny_http = "0.12"
+tungstenite = "0.21"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
