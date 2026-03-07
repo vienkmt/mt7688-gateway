@@ -50,6 +50,59 @@ impl Uci {
         }
     }
 
+    /// Get a UCI list value (space/newline-separated)
+    pub fn get_list(key: &str) -> Vec<String> {
+        Command::new("uci")
+            .args(["get", key])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .split_whitespace()
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Add to UCI list: `uci add_list <key>=<value>`
+    pub fn add_list(key: &str, value: &str) -> Result<(), String> {
+        let arg = format!("{}={}", key, value);
+        let output = Command::new("uci")
+            .args(["add_list", &arg])
+            .output()
+            .map_err(|e| format!("uci exec failed: {}", e))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+        }
+    }
+
+    /// Revert uncommitted changes: `uci revert <config>`
+    pub fn revert(config: &str) -> Result<(), String> {
+        let output = Command::new("uci")
+            .args(["revert", config])
+            .output()
+            .map_err(|e| format!("uci exec failed: {}", e))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+        }
+    }
+
+    /// Check if there are uncommitted changes: `uci changes <config>`
+    pub fn has_changes(config: &str) -> bool {
+        Command::new("uci")
+            .args(["changes", config])
+            .output()
+            .ok()
+            .map(|o| !o.stdout.is_empty())
+            .unwrap_or(false)
+    }
+
     /// Commit changes: `uci commit <config>`
     pub fn commit(config: &str) -> Result<(), String> {
         let output = Command::new("uci")

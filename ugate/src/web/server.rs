@@ -94,6 +94,70 @@ pub fn run(
                 handle_change_password(&mut request, &state)
             }
 
+            // WiFi
+            (tiny_http::Method::Get, "/api/wifi/scan") => {
+                crate::web::wifi::handle_scan()
+            }
+            (tiny_http::Method::Get, "/api/wifi/status") => {
+                crate::web::wifi::handle_status()
+            }
+            (tiny_http::Method::Post, "/api/wifi/connect") => {
+                let body = read_body(&mut request);
+                crate::web::wifi::handle_connect(&body)
+            }
+            (tiny_http::Method::Post, "/api/wifi/disconnect") => {
+                crate::web::wifi::handle_disconnect()
+            }
+
+            // Network config (LAN/WAN)
+            (tiny_http::Method::Get, "/api/network") => {
+                crate::web::netcfg::handle_get_network()
+            }
+            (tiny_http::Method::Post, "/api/network") => {
+                let body = read_body(&mut request);
+                crate::web::netcfg::handle_set_network(&body)
+            }
+            (tiny_http::Method::Post, "/api/network/apply") => {
+                crate::web::netcfg::handle_apply()
+            }
+            (tiny_http::Method::Post, "/api/network/revert") => {
+                crate::web::netcfg::handle_revert()
+            }
+            (tiny_http::Method::Get, "/api/network/changes") => {
+                crate::web::netcfg::handle_changes()
+            }
+
+            // NTP
+            (tiny_http::Method::Get, "/api/ntp") => {
+                crate::web::netcfg::handle_get_ntp()
+            }
+            (tiny_http::Method::Post, "/api/ntp/sync") => {
+                crate::web::netcfg::handle_ntp_sync()
+            }
+            (tiny_http::Method::Post, "/api/ntp") => {
+                let body = read_body(&mut request);
+                crate::web::netcfg::handle_set_ntp(&body)
+            }
+
+            // Routes
+            (tiny_http::Method::Get, "/api/routes") => {
+                crate::web::netcfg::handle_get_routes()
+            }
+            (tiny_http::Method::Post, "/api/routes") => {
+                let body = read_body(&mut request);
+                crate::web::netcfg::handle_add_route(&body)
+            }
+            (tiny_http::Method::Delete, path) if path.starts_with("/api/routes/") => {
+                let name = path.trim_start_matches("/api/routes/");
+                crate::web::netcfg::handle_delete_route(name)
+            }
+
+            // Interface metric
+            (tiny_http::Method::Post, "/api/interface/metric") => {
+                let body = read_body(&mut request);
+                crate::web::netcfg::handle_set_metric(&body)
+            }
+
             _ => {
                 tiny_http::Response::from_string(r#"{"error":"not found"}"#)
                     .with_status_code(404)
@@ -366,8 +430,10 @@ fn handle_change_password(
 }
 
 fn read_body(request: &mut tiny_http::Request) -> String {
+    use std::io::Read;
     let mut body = String::new();
-    let _ = request.as_reader().read_to_string(&mut body);
+    // Giới hạn 4KB — config JSON chỉ ~1KB, tránh OOM trên thiết bị 64MB RAM
+    let _ = request.as_reader().take(4096).read_to_string(&mut body);
     body
 }
 
