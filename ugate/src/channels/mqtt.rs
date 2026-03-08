@@ -5,7 +5,7 @@
 
 use crate::config::AppState;
 use rumqttc::{Client, MqttOptions, QoS, Transport};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -83,10 +83,17 @@ fn run_publish_loop(
     let conn_state = Arc::new(std::sync::atomic::AtomicU8::new(0));
     let conn_state_clone = conn_state.clone();
 
+    // Flag để dừng IO thread khi publish loop kết thúc
+    let io_stop = Arc::new(AtomicBool::new(false));
+    let io_stop_clone = io_stop.clone();
+
     // Thread xử lý I/O mạng cho MQTT + nhận message từ subscribe topic
     let cmd_tx_clone = cmd_tx.clone();
     std::thread::spawn(move || {
         for notification in connection.iter() {
+            if io_stop_clone.load(Ordering::Relaxed) {
+                break;
+            }
             match notification {
                 Ok(rumqttc::Event::Incoming(rumqttc::Packet::ConnAck(_))) => {
                     log::info!("[MQTT] Đã kết nối!");
@@ -94,6 +101,11 @@ fn run_publish_loop(
                 }
                 // Xử lý message nhận từ subscribe topic → chuyển thành Command
                 Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(msg))) => {
+                    // Giới hạn 10KB — command JSON chỉ vài trăm bytes, tránh OOM
+                    if msg.payload.len() > 10240 {
+                        log::warn!("[MQTT] Bỏ qua message quá lớn: {} bytes", msg.payload.len());
+                        continue;
+                    }
                     let payload = String::from_utf8_lossy(&msg.payload);
                     log::debug!("[MQTT] Nhận từ '{}': {}", msg.topic, payload);
                     if let Some(cmd) = crate::commands::parse_json_command(&payload) {
@@ -164,6 +176,8 @@ fn run_publish_loop(
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                io_stop.store(true, Ordering::Relaxed);
+                let _ = client.disconnect();
                 return Err("Kênh dữ liệu đã đóng".into());
             }
         }
@@ -171,11 +185,15 @@ fn run_publish_loop(
         // Kiểm tra thay đổi config
         if config_rx.try_recv().is_ok() {
             log::info!("[MQTT] Config thay đổi, kết nối lại...");
+            io_stop.store(true, Ordering::Relaxed);
+            let _ = client.disconnect();
             return Ok(());
         }
 
         // Kiểm tra kết nối còn sống không
         if conn_state.load(Ordering::Relaxed) == 2 {
+            io_stop.store(true, Ordering::Relaxed);
+            let _ = client.disconnect();
             return Err("Mất kết nối".into());
         }
     }

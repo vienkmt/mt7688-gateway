@@ -85,8 +85,11 @@ async fn run_publish_loop(
                     match result {
                         Ok(resp) => {
                             stats_c.http_sent.fetch_add(1, Ordering::Relaxed);
-                            // Đọc response body — nếu có data thì gửi xuống MCU
-                            if let Ok(body) = resp.into_string() {
+                            // Đọc response body (giới hạn 10KB, tránh OOM nếu server trả HTML lớn)
+                            let mut body = String::new();
+                            use std::io::Read;
+                            if resp.into_reader().take(10240)
+                                .read_to_string(&mut body).is_ok() {
                                 let trimmed = body.trim();
                                 if !trimmed.is_empty() {
                                     let cmd = if let Some(cmd) = crate::commands::parse_json_command(trimmed) {

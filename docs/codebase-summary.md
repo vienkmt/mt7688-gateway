@@ -1,13 +1,24 @@
-# Codebase Summary - MT7688AN IoT Gateway
+# Codebase Summary - ugate IoT Gateway
 
-**Last Updated:** 2026-03-05
-**Version:** 2.0 (Tokio Async Refactor)
+**Generated:** 2026-03-08
+**Version:** 3.0 (Phases 1-6 Complete)
+**Total Lines of Code:** ~3,070 (ugate/src)
+**Total Files:** 21
 
-## Overview
+## Project Overview
 
-This is a Rust-based IoT Gateway firmware for the MediaTek LinkIt Smart 7688 (MT7688AN) running OpenWrt 21.02. The gateway provides system monitoring, network configuration management, and data publishing via MQTT and HTTP to external servers.
+**ugate** is a production-ready IoT Gateway firmware for MT7688 (MIPS 580MHz, 64MB RAM) running OpenWrt 24.10. It provides multi-channel data acquisition and command dispatch with the following capabilities:
 
-**v0.2.0 Refactor (2026-03-05):** Migrated from multi-thread blocking I/O to Tokio async/await with single-thread executor (epoll). Binary renamed from `v3s-system-monitor` to `vgateway`. HTTP port 8888 → 8889. Config file `/etc/v3s-monitor.toml` → `/etc/vgateway.toml`.
+- **Real-time UART data collection** with configurable frame detection (line-based, fixed-length, timeout-based)
+- **Multi-channel fan-out** to MQTT (pub/sub), HTTP POST, and TCP (server/client)
+- **Bi-directional command control** from WebSocket, TCP, and MQTT subscription
+- **GPIO control** via chardev ioctl (32+ GPIO lines)
+- **Web management UI** with Vue.js SPA and session authentication
+- **Offline buffering** with RAM→disk overflow
+- **Flexible UCI-based configuration** with hot-reload
+- **Syslog integration** for OpenWrt logging
+
+**Phases 1-6 complete.** Ready for production deployment.
 
 ## Project Structure
 

@@ -66,3 +66,32 @@ Ghi chú các lỗi hay gặp khi phát triển firmware Rust cho MIPS embedded.
 - **Triệu chứng:** Auth check fail dù cookie đúng
 - **Nguyên nhân:** Browser gửi `Cookie` nhưng code check `cookie` (lowercase)
 - **Fix:** Check cả hai: `h.field.as_str() == "Cookie" || h.field.as_str() == "cookie"`
+
+## 9. Network Apply: dùng `ubus call network reload` thay vì `network restart`
+
+- **Triệu chứng:** Ấn "Áp dụng" → mất kết nối 5-10s, toàn bộ interface tắt/bật
+- **Nguyên nhân:** `/etc/init.d/network restart` restart TẤT CẢ interface kể cả interface không thay đổi
+- **Fix:** Dùng `ubus call network reload` — netifd tự diff config cũ/mới, chỉ restart interface thay đổi
+- **So sánh:**
+  - `network restart` → gián đoạn cao (tắt/bật tất cả)
+  - `ifup <iface>` → trung bình (restart 1 interface chỉ định)
+  - `ubus call network reload` → thấp nhất (netifd diff-based)
+- **WiFi:** netifd không quản lý WiFi → vẫn cần `wifi reload` riêng
+- **NTP/System:** chỉ `uci commit system`, không cần reload gì
+- **Học từ LuCI:** LuCI dùng `ubus call uci apply` + rollback timer 30s + `ubus call network reload`
+
+## 10. NTP commit trực tiếp, không cần draft/apply
+
+- **Triệu chứng:** Lưu NTP config → phải ấn "Áp dụng & Lưu flash" → trigger network restart không cần thiết
+- **Fix:** NTP `handle_set_ntp()` gọi `Uci::commit("system")` ngay → ghi flash trực tiếp, không cần qua apply flow
+
+## 11. Channel disable toggle không có tác dụng (MQTT, TCP)
+
+- **Triệu chứng:** Tắt channel qua web UI switch → lưu → channel vẫn hoạt động. MQTT subscribe vẫn nhận message, TCP connection vẫn echo data. Chỉ HTTP channel tắt đúng.
+- **Nguyên nhân (MQTT):** `run_publish_loop` spawn IO thread xử lý `connection.iter()`. Khi config thay đổi, publish loop return nhưng IO thread cũ **không bị dừng** — vẫn subscribe và forward message tới dispatcher qua `cmd_tx`. Mỗi lần reconnect tích lũy thêm 1 IO thread → 1 message MQTT nhân bản thành N message TX.
+- **Nguyên nhân (TCP Server):** `handle_connection` được `tokio::spawn` → không bị cancel khi config thay đổi, connection cũ vẫn hoạt động.
+- **Nguyên nhân (TCP Client):** `handle_connection.await` block trực tiếp không có `select!` với config watch → không phát hiện thay đổi cho đến khi remote đóng connection.
+- **HTTP hoạt động đúng vì:** Dùng `tokio::sync::watch` + `config_watch.changed()` trong `select!` → phản hồi config change ngay lập tức.
+- **Fix (MQTT):** Thêm `Arc<AtomicBool>` flag (`io_stop`) + gọi `client.disconnect()` tại mọi return path của `run_publish_loop`. IO thread check flag mỗi vòng lặp → break khi flag = true.
+- **Fix (TCP):** Thêm `watch::Receiver<()>` shutdown signal vào `handle_connection`, `select!` trên `shutdown_rx.changed()`. Server truyền `state.subscribe()` cho mỗi spawned connection. Client tương tự.
+- **Bài học:** Khi spawn thread/task xử lý network I/O, luôn có cơ chế shutdown signal. Đặc biệt `std::thread::spawn` không tự cancel như async task — cần flag hoặc disconnect explicit.

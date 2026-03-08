@@ -1,25 +1,32 @@
 //! Xác thực đơn giản qua password + session cookie
 //! Session lưu trong RAM, hết hạn khi restart
 
-use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::sync::RwLock;
 
-/// Quản lý session đơn giản (token trong RAM)
+/// Số session tối đa (thiết bị IoT ít user, 4 là đủ)
+const MAX_SESSIONS: usize = 4;
+
+/// Quản lý session đơn giản (token trong RAM, giới hạn số lượng)
 pub struct SessionManager {
-    tokens: RwLock<HashSet<String>>,
+    tokens: RwLock<VecDeque<String>>,
 }
 
 impl SessionManager {
     pub fn new() -> Self {
         Self {
-            tokens: RwLock::new(HashSet::new()),
+            tokens: RwLock::new(VecDeque::new()),
         }
     }
 
-    /// Tạo session mới, trả về token
+    /// Tạo session mới, trả về token. Xoá session cũ nhất nếu vượt giới hạn.
     pub fn create_session(&self) -> String {
         let token = generate_token();
-        self.tokens.write().unwrap().insert(token.clone());
+        let mut tokens = self.tokens.write().unwrap();
+        if tokens.len() >= MAX_SESSIONS {
+            tokens.pop_front(); // xoá session cũ nhất
+        }
+        tokens.push_back(token.clone());
         token
     }
 
@@ -30,7 +37,7 @@ impl SessionManager {
             None => return false,
         };
         match token {
-            Some(t) => self.tokens.read().unwrap().contains(t),
+            Some(t) => self.tokens.read().unwrap().iter().any(|s| s == t),
             None => false,
         }
     }

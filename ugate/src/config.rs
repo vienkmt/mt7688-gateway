@@ -207,6 +207,7 @@ impl Default for GeneralConfig {
 
 // --- UCI loading ---
 
+#[allow(dead_code)]
 fn uci_get_or(key: &str, default: &str) -> String {
     Uci::get(&format!("{}.@general[0].{}", UCI_PKG, key))
         .unwrap_or_else(|_| default.to_string())
@@ -272,6 +273,10 @@ config web
     option port '8888'
     option password 'admin'
     option max_ws_connections '4'
+
+config upgrade
+    option url 'https://example.com/ugate/latest.json'
+    option auto_check '0'
 "#;
         let _ = std::fs::write(path, content.trim_start());
     }
@@ -288,6 +293,9 @@ config web
         // General
         uci_set("general", "device_name", &self.general.device_name);
         uci_set("general", "interval_secs", &self.general.interval_secs.to_string());
+        // Sync hostname với device_name
+        Uci::set("system.@system[0].hostname", &self.general.device_name).ok();
+        Uci::commit("system").ok();
 
         // MQTT
         uci_set("mqtt", "enabled", if self.mqtt.enabled { "1" } else { "0" });

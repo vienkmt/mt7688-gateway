@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 
 /// Chạy TCP Server: lắng nghe kết nối, gửi dữ liệu UART và nhận lệnh
 pub async fn run_server(
@@ -65,7 +65,8 @@ pub async fn run_server(
                             stats.tcp_connections.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             let cmd_tx = cmd_tx.clone();
                             let conn_uart_rx = uart_rx.resubscribe();
-                            tokio::spawn(handle_connection(stream, conn_uart_rx, cmd_tx));
+                            let conn_shutdown = state.subscribe();
+                            tokio::spawn(handle_connection(stream, conn_uart_rx, cmd_tx, conn_shutdown));
                         }
                         Err(e) => {
                             log::error!("[TCP Server] Accept lỗi: {}", e);
@@ -114,7 +115,8 @@ pub async fn run_client(
                         stats.tcp_state.store(2, std::sync::atomic::Ordering::Relaxed);
                         stats.tcp_connections.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         reconnector.reset();
-                        handle_connection(stream, uart_rx.resubscribe(), cmd_tx.clone()).await;
+                        let conn_shutdown = state.subscribe();
+                        handle_connection(stream, uart_rx.resubscribe(), cmd_tx.clone(), conn_shutdown).await;
                         stats.tcp_connections.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                         stats.tcp_state.store(1, std::sync::atomic::Ordering::Relaxed);
                         log::warn!("[TCP Client] Mất kết nối {}", addr);
@@ -136,12 +138,19 @@ async fn handle_connection(
     stream: TcpStream,
     mut uart_rx: broadcast::Receiver<Vec<u8>>,
     cmd_tx: mpsc::Sender<Command>,
+    mut shutdown_rx: watch::Receiver<()>,
 ) {
     let (mut reader, mut writer) = stream.into_split();
     let mut buf = vec![0u8; 1024];
 
     loop {
         tokio::select! {
+            // Dừng khi config thay đổi
+            _ = shutdown_rx.changed() => {
+                log::info!("[TCP] Config thay đổi, đóng kết nối");
+                break;
+            }
+
             // Đọc dữ liệu từ TCP (raw bytes, không cần newline)
             result = tokio::io::AsyncReadExt::read(&mut reader, &mut buf) => {
                 match result {

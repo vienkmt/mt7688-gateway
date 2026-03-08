@@ -223,6 +223,7 @@ async fn dispatch_command(
                     Ok(()) => {
                         log::info!("[Dispatch] UART TX: {} bytes", bytes.len());
                         stats.uart_tx_bytes.fetch_add(bytes.len() as u32, std::sync::atomic::Ordering::Relaxed);
+                        stats.uart_tx_frames.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         // Thông báo WS clients về dữ liệu TX
                         let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
                         let json = format!(r#"{{"type":"uart","dir":"tx","hex":"{}","len":{}}}"#, hex, bytes.len());

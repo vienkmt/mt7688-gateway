@@ -76,11 +76,12 @@ pub fn handle_set_network(body: &str) -> Resp {
     json_resp(r#"{"ok":true,"draft":true,"message":"saved to RAM, apply to persist"}"#)
 }
 
-/// POST /api/network/apply — commit tất cả thay đổi mạng + restart
+/// POST /api/network/apply — commit thay đổi + restart chỉ interface bị thay đổi
 pub fn handle_apply() -> Resp {
-    let has_net = Uci::has_changes("network");
+    let net_sections = Uci::changed_sections("network");
     let has_wifi = Uci::has_changes("wireless");
     let has_sys = Uci::has_changes("system");
+    let has_net = !net_sections.is_empty();
     if !has_net && !has_wifi && !has_sys {
         return json_resp(r#"{"ok":true,"message":"no pending changes"}"#);
     }
@@ -93,14 +94,23 @@ pub fn handle_apply() -> Resp {
     if has_sys {
         Uci::commit("system").ok();
     }
-    delayed_network_restart();
+    // netifd reload: chỉ restart interface thay đổi (diff-based, gián đoạn tối thiểu)
+    if has_net {
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            Command::new("ubus")
+                .args(["call", "network", "reload"])
+                .status()
+                .ok();
+        });
+    }
     if has_wifi {
         std::thread::spawn(|| {
-            std::thread::sleep(std::time::Duration::from_secs(2));
+            std::thread::sleep(std::time::Duration::from_secs(1));
             Command::new("wifi").arg("reload").status().ok();
         });
     }
-    json_resp(r#"{"ok":true,"message":"applied, network restart in 2s"}"#)
+    json_resp(r#"{"ok":true,"message":"applied"}"#)
 }
 
 /// POST /api/network/revert — huỷ tất cả thay đổi chưa commit
@@ -160,13 +170,16 @@ pub fn handle_set_ntp(body: &str) -> Resp {
     }
     let enabled = jval(body, "enabled").map(|v| v == "true").unwrap_or(true);
     Uci::set("system.ntp.enabled", if enabled { "1" } else { "0" }).ok();
-    json_resp(r#"{"ok":true,"draft":true,"message":"saved to RAM, apply to persist"}"#)
+    Uci::commit("system").ok();
+    json_resp(r#"{"ok":true,"message":"NTP config saved"}"#)
 }
 
 /// POST /api/ntp/sync — trigger manual sync (non-blocking with timeout)
 pub fn handle_ntp_sync() -> Resp {
+    let servers = Uci::get_list("system.ntp.server");
+    let server = servers.first().map(|s| s.as_str()).unwrap_or("pool.ntp.org");
     let result = Command::new("timeout")
-        .args(["5", "ntpd", "-q", "-p", "pool.ntp.org"])
+        .args(["5", "ntpd", "-q", "-p", server])
         .status();
     match result {
         Ok(s) if s.success() => json_resp(r#"{"ok":true,"method":"ntp"}"#),
@@ -260,6 +273,46 @@ pub fn handle_delete_route(name: &str) -> Resp {
     json_resp(r#"{"ok":true,"draft":true}"#)
 }
 
+/// GET /api/wan/discover — dynamic WAN interface discovery from default routes
+pub fn handle_wan_discover() -> Resp {
+    let output = Command::new("ip")
+        .args(["route", "show", "default"])
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+
+    let mut ifaces = Vec::new();
+    for line in output.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        let dev = parts.iter().position(|&p| p == "dev")
+            .and_then(|i| parts.get(i + 1)).copied().unwrap_or("-");
+        let via = parts.iter().position(|&p| p == "via")
+            .and_then(|i| parts.get(i + 1)).copied().unwrap_or("-");
+        let metric = parts.iter().position(|&p| p == "metric")
+            .and_then(|i| parts.get(i + 1)).copied().unwrap_or("0");
+        let (uci_name, label) = dev_to_uci(dev);
+        let uci_metric = uci_get(&format!("network.{}.metric", uci_name));
+        ifaces.push(format!(
+            r#"{{"dev":"{}","uci":"{}","label":"{}","gateway":"{}","metric":"{}","uci_metric":"{}"}}"#,
+            crate::web::json_escape(dev), uci_name,
+            label, crate::web::json_escape(via),
+            metric, uci_metric,
+        ));
+    }
+    json_resp(&format!(r#"{{"interfaces":[{}]}}"#, ifaces.join(",")))
+}
+
+/// Map device name → (UCI interface name, display label)
+fn dev_to_uci(dev: &str) -> (&str, &str) {
+    match dev {
+        "eth0.2" | "eth0.2@eth0" => ("wan", "ETH WAN"),
+        "phy0-sta0" => ("wwan", "WiFi WAN"),
+        "br-lan" => ("lan", "LAN"),
+        _ => (dev, dev), // future 4G, USB tethering, etc.
+    }
+}
+
 /// POST /api/interface/metric
 pub fn handle_set_metric(body: &str) -> Resp {
     let iface = match jval(body, "interface") {
@@ -286,17 +339,6 @@ fn json_str_array(items: &[String]) -> String {
     }
     let inner: Vec<String> = items.iter().map(|s| format!("\"{}\"", s)).collect();
     format!("[{}]", inner.join(","))
-}
-
-/// Delay network restart — response trước, restart sau (tránh kill connection)
-fn delayed_network_restart() {
-    std::thread::spawn(|| {
-        std::thread::sleep(std::time::Duration::from_secs(2));
-        Command::new("/etc/init.d/network")
-            .arg("restart")
-            .status()
-            .ok();
-    });
 }
 
 /// Convert netmask "255.255.255.0" → CIDR prefix length 24

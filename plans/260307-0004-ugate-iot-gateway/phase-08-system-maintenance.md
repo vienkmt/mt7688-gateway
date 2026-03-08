@@ -1,7 +1,7 @@
 # Phase 8: System Maintenance
 
 **Priority:** High
-**Status:** pending
+**Status:** in-progress
 **Effort:** 2 days
 **Depends on:** Phase 3 (Web Server)
 
@@ -352,28 +352,22 @@ async function restart() {
 
 ## Todo
 
-- [ ] Create web/maintenance.rs
-- [ ] Add backup handler
-- [ ] Add restore handler (multipart parse)
-- [ ] Add factory reset handler
-- [ ] Add restart handler
-- [ ] Add reload handler
-- [ ] Add version handler
-- [ ] Add upgrade upload handler
-- [ ] Add upgrade check handler
-- [ ] Add upgrade remote handler
-- [ ] Create default-ugate.config
-- [ ] Add upgrade URL to UCI config
-- [ ] Wire routes in server.rs
-- [ ] Create MaintenanceView.vue
-- [ ] Test backup download
-- [ ] Test restore upload
-- [ ] Test factory reset
-- [ ] Test restart
-- [ ] Test hot reload
-- [ ] Test upgrade check online
-- [ ] Test manual IPK upload
-- [ ] Test remote upgrade
+- [x] Create web/maintenance.rs
+- [x] Create build.rs (BUILD_DATE, GIT_COMMIT)
+- [x] Add backup handler (raw file download)
+- [x] Add restore handler (raw body, UCI validation)
+- [x] Add factory reset handler (Config::default + save_to_uci)
+- [x] Add restart handler (spawn thread + reboot)
+- [x] Add reload handler (re-read UCI + state.update)
+- [x] Add version handler (CARGO_PKG_VERSION + build info)
+- [x] Add upgrade upload handler (raw body, IPK magic check)
+- [x] Add upgrade check handler (ureq + version compare)
+- [x] Add upgrade remote handler (download + sha256sum verify)
+- [x] Wire routes in server.rs (9 new routes)
+- [x] Register module in web/mod.rs
+- [ ] Add upgrade UCI section (url, auto_check)
+- [ ] Add maintenance tab to embedded_index.html
+- [ ] Test on device
 
 ## Success Criteria
 

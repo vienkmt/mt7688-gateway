@@ -103,6 +103,33 @@ impl Uci {
             .unwrap_or(false)
     }
 
+    /// Get list of changed sections: `uci changes <config>`
+    /// Returns unique section names (e.g. ["lan", "wan"] from "network.lan.proto=...")
+    pub fn changed_sections(config: &str) -> Vec<String> {
+        let output = Command::new("uci")
+            .args(["changes", config])
+            .output()
+            .ok();
+        let mut sections = Vec::new();
+        if let Some(o) = output {
+            let text = String::from_utf8_lossy(&o.stdout);
+            for line in text.lines() {
+                // Format: "network.lan.proto='static'" or "-network.wan.dns"
+                let line = line.trim_start_matches('-');
+                if let Some(rest) = line.strip_prefix(&format!("{}.", config)) {
+                    if let Some(section) = rest.split('.').next() {
+                        let section = section.split('=').next().unwrap_or(section);
+                        let s = section.to_string();
+                        if !sections.contains(&s) {
+                            sections.push(s);
+                        }
+                    }
+                }
+            }
+        }
+        sections
+    }
+
     /// Commit changes: `uci commit <config>`
     pub fn commit(config: &str) -> Result<(), String> {
         let output = Command::new("uci")

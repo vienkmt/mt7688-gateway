@@ -1,92 +1,126 @@
-# System Architecture - MT7688AN IoT Gateway
+# System Architecture - ugate IoT Gateway
 
-**Last Updated:** 2026-03-05
-**Version:** 2.0 (Async Refactor)
+**Last Updated:** 2026-03-08
+**Version:** 3.0 (Phase 1-6 Complete)
 
 ## Architecture Overview
 
-The MT7688AN IoT Gateway is a Rust-based embedded system that collects sensor/device data via UART and publishes it to remote servers (MQTT, HTTP) while providing a web-based management interface for configuration and monitoring.
+**ugate** is a hybrid async/sync IoT Gateway for MT7688 that collects binary/text data via UART and fan-outs to MQTT, HTTP, and TCP channels while accepting commands from multiple sources (WebSocket, TCP, MQTT) to drive GPIO and UART TX. The design prioritizes resource efficiency on 64MB RAM using Tokio single-thread async executor with epoll I/O multiplexing.
 
-### High-Level Components
+### High-Level Components (Phase 1-6)
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    IoT Gateway (Rust)                       │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐   │
-│  │  Web Server   │  │  UART Reader  │  │   Time Sync   │   │
-│  │  (tiny-http)  │  │ (AsyncFd epoll)   │ (Startup)     │   │
-│  │   :8889       │  │   /dev/ttyS0  │  │               │   │
-│  └───────────────┘  └───────────────┘  └───────────────┘   │
-│         △                    △                                │
-│         │                    │                                │
-│    ┌────┴──────────┬─────────┴────┐                          │
-│    │               │               │                          │
-│    ▼               ▼               ▼                          │
-│ ┌──────────┐ ┌──────────┐ ┌──────────┐                      │
-│ │ Network  │ │  System  │ │ Config   │                      │
-│ │ Config   │ │  Info    │ │ Manager  │                      │
-│ └──────────┘ └──────────┘ └──────────┘                      │
-│    △ │           △            △  │                           │
-│    │ │           │            │  │                           │
-│    │ ▼           ▼            │  ▼                           │
-│    │ ┌─────────────────────┐  │ ┌──────────────────────┐    │
-│    │ │   UCI Wrapper       │  │ │  AppState (Config)   │    │
-│    │ │   /etc/config/net   │  │ │  RwLock + watch<()>  │    │
-│    └─┤                     │  └─┤                      │    │
-│      │  [get|set|delete|   │    │ MQTT/HTTP/UART       │    │
-│      │   commit]           │    │ settings             │    │
-│      └─────────────────────┘    └──────────────────────┘    │
-│                                                               │
-│  ┌──────────────────┐     ┌──────────────────┐              │
-│  │  MQTT Publisher  │     │ HTTP Publisher   │              │
-│  │  (std::thread)   │     │ (tokio::spawn)   │              │
-│  │  rumqttc sync    │     │ ureq + blocking  │              │
-│  └──────────────────┘     └──────────────────┘              │
-│         △                          △                          │
-└─────────┼──────────────────────────┼──────────────────────────┘
-          │                          │
-          │ (from UART reader)       │ (from UART reader)
-          │                          │
-    ┌─────▼──────────────────────────▼─────┐
-    │  Channels:                            │
-    │  - MQTT: std::sync::mpsc (unbounded)  │
-    │  - HTTP: tokio::sync::mpsc (cap 64)   │
-    └─────────────────────────────────────────┘
-          △
-          │ (UART serial data)
-          │
-    ┌─────┴──────────┐
-    │  External MCU  │
-    │   (Sensors)    │
-    │  /dev/ttyS2    │
-    └────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                     ugate - Tokio (single_thread)                     │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────┐      │
+│  │  Web Server     │  │  UART Reader     │  │  Time Sync     │      │
+│  │  (tiny-http)    │  │  (AsyncFd)       │  │  (HTTP NTP)    │      │
+│  │  :8888          │  │  /dev/ttyS*      │  │  (Startup)     │      │
+│  │  spawn_blocking │  │  epoll + select! │  │                │      │
+│  └─────────────────┘  └──────────────────┘  └────────────────┘      │
+│         │                     │ (broadcast 64)                         │
+│         │                     ├─────────────────────┐                 │
+│         │                     ▼                     ▼                 │
+│  ┌──────▼────────────────┐                    ┌────────────┐         │
+│  │  WebSocket Manager    │                    │  UART TX   │         │
+│  │  (tungstenite)        │                    │  Writer    │         │
+│  │  Real-time logs/stats │                    │  (async)   │         │
+│  └───────────────────────┘                    └────────────┘         │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                    Fan-Out Hub                                │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │   │
+│  │  │  MQTT    │  │  HTTP    │  │  TCP Srv │  │  TCP Cli │    │   │
+│  │  │  Pub     │  │  POST    │  │  (async) │  │  (async) │    │   │
+│  │  │(std:thr) │  │  (async) │  │          │  │          │    │   │
+│  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘    │   │
+│  │     [Sub]         [Response]    [Bi-dir]     [Bi-dir]       │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│         │ (cmd)              │ (cmd)           │ (cmd)                │
+│         └──────────┬─────────┴──────────┬──────┘                     │
+│                    │                    │                            │
+│                    ▼                    ▼                            │
+│            ┌──────────────────────────────────┐                     │
+│            │   Command Merge + Dispatch       │                     │
+│            │   (tokio::mpsc 32 capacity)      │                     │
+│            └──────────────────────────────────┘                     │
+│                    │                    │                            │
+│         ┌──────────┘                    └──────────┐                │
+│         ▼                                          ▼                │
+│  ┌────────────────┐                        ┌────────────────┐      │
+│  │  GPIO Control  │                        │  UART TX Queue │      │
+│  │  (chardev io)  │                        │  (async)       │      │
+│  │  32+ GPIO      │                        │  (serial write)│      │
+│  └────────────────┘                        └────────────────┘      │
+│                                                                       │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │              Shared State Management                           │ │
+│  │  ┌────────────────────────────────────────────────────────┐  │ │
+│  │  │  AppState: RwLock<Config> + watch<()> notifier       │  │ │
+│  │  │  - MQTT config (broker, auth, topic, QoS)            │  │ │
+│  │  │  - HTTP config (URL, method)                         │  │ │
+│  │  │  - TCP config (server port, client host:port)        │  │ │
+│  │  │  - UART config (port, baud, frame mode, timeout)     │  │ │
+│  │  │  - GPIO config (32+ line definitions)                │  │ │
+│  │  │  - Web config (port, auth password, ws max conn)     │  │ │
+│  │  └────────────────────────────────────────────────────────┘  │ │
+│  │  ┌────────────────────────────────────────────────────────┐  │ │
+│  │  │  SharedStats: Atomic counters (status API)            │  │ │
+│  │  │  - UART frame count, MQTT/HTTP/TCP sent/received      │  │ │
+│  │  │  - Channel state (connected=2, connecting=1, down=0)  │  │ │
+│  │  │  - Uptime, CPU%, RAM%, GPIO toggle count              │  │ │
+│  │  └────────────────────────────────────────────────────────┘  │ │
+│  │  ┌────────────────────────────────────────────────────────┐  │ │
+│  │  │  SessionManager: VecDeque<token> (auth)               │  │ │
+│  │  │  - Max 4 concurrent sessions, token expiry via reload │  │ │
+│  │  └────────────────────────────────────────────────────────┘  │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+│                                                                       │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │              Offline Buffer (RAM + Disk)                       │ │
+│  │  - RAM queue (64 messages) → /tmp/ugate_buffer/buffer.hex     │ │
+│  │  - On reconnect: read disk first (FIFO), then RAM             │ │
+│  │  - HEX encoding for binary data preservation                  │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────┘
+                                │
+                                │ (UART RX)
+                                ▼
+                        ┌──────────────────┐
+                        │  External MCU    │
+                        │  (Modbus/binary) │
+                        │  /dev/ttyS0      │
+                        └──────────────────┘
 ```
 
 ## Module Architecture
 
-### 1. HTTP Server (main.rs)
+### 1. HTTP Server & WebSocket (main.rs + web/server.rs + web/ws.rs)
 
-**Purpose:** Accept configuration changes and provide system monitoring UI
+**Purpose:** REST API (config, login, GPIO), WebSocket (real-time logs/stats), static UI
 
 **Endpoints:**
 
-| Endpoint | Method | Purpose | Response |
-|----------|--------|---------|----------|
-| `/` | GET | Dashboard with system stats | HTML |
-| `/config` | GET | Configuration form | HTML |
-| `/config` | POST | Save MQTT/HTTP/UART settings | HTML (with status) |
-| `/network` | GET | Network configuration form | HTML |
-| `/network` | POST | Save WAN settings | HTML (with validation errors) |
-| `/api/network` | GET | Get WAN config as JSON | JSON |
-| `/api/network` | POST | Set WAN config from JSON | JSON (with errors) |
+| Endpoint | Method | Purpose | Response | Auth |
+|----------|--------|---------|----------|------|
+| `/` | GET | Index.html (Vue SPA) | HTML | No |
+| `/api/login` | POST | Authenticate, get session | JSON (token) | No |
+| `/api/config` | GET | Get all config | JSON | Yes |
+| `/api/config` | POST | Update config | JSON + save to UCI | Yes |
+| `/api/status` | GET | Real-time stats | JSON | No |
+| `/api/gpio/{pin}` | POST | Control GPIO (set/toggle) | JSON | Yes |
+| `/api/uart/tx` | POST | Send data to UART TX | JSON | Yes |
+| `/ws` | UPGRADE | WebSocket (logs/stats) | Binary frames | No |
 
 **Server Details:**
 - Runtime: Tokio single-thread executor (`#[tokio::main(flavor = "current_thread")]`)
-- HTTP Server: `spawn_blocking` wrapping tiny-http (blocking server)
-- Port: 8889
-- Config file: `/etc/vgateway.toml`
+- HTTP Server: `spawn_blocking(tiny-http::Server::http)`
+- WebSocket: tungstenite in async task, broadcasts UART data & system stats
+- Port: 8888 (configurable via UCI: config.web.port)
+- Static UI: Embedded Vue.js binary in include_str!("embedded_index.html")
+- Auth: Session cookies (1h expiry in RAM), password in config
 
 **Request Handler Flow:**
 
@@ -111,48 +145,102 @@ Parse URL + Method
     └─ "/api/network" POST ─▶ parse_network_json() ──▶ validate_config() ──▶ save_to_uci() ──▶ format_network_json()
 ```
 
-### 2. Network Configuration (network_config.rs + html_network.rs)
+### 2. UART Reader (uart/mod.rs + uart/reader.rs + uart/writer.rs)
 
-**Responsibility:** Manage WAN interface (eth0.2) configuration
+**Responsibility:** Non-blocking serial I/O with multiple frame detection modes
 
 **Architecture:**
 
 ```
-User submits form (HTML or JSON API)
+Startup: open /dev/ttyS* (e.g., /dev/ttyS0)
     │
     ▼
-Parse input (URL-encoded or JSON)
+AsyncFd::new(fd) ← Wrap in AsyncFd for epoll
     │
     ▼
-Create NetworkConfig struct
+tokio::select! {
+    _ = config_watch.changed() => reconnect with new settings
+    readable = async_fd.readable() => {
+        read frame(s)
+        broadcast to all subscribers (64 capacity)
+    }
+}
+    │
+    ├─ Frame Mode: Line (delimited by \n or \r\n)
+    ├─ Frame Mode: Fixed length (e.g., 128 bytes) + timeout fallback
+    └─ Frame Mode: Timeout (collect bytes until gap_ms with no data)
     │
     ▼
-validate_config()
-    ├─ DHCP mode: No validation
-    └─ Static mode:
-       ├─ IP format check (is_valid_ipv4)
-       ├─ Netmask validity (is_valid_netmask)
-       ├─ Gateway in subnet (gateway_in_subnet)
-       ├─ LAN conflict check (conflicts_with_lan: 10.10.10.0/24)
-       └─ DNS format validation
+Parse frame data (binary or text)
     │
-    ▼ (if valid)
-NetworkConfig::save_to_uci()
-    ├─ UCI::set("network.wan.proto", mode)
-    ├─ (Static) UCI::set ipaddr, netmask, gateway, dns
-    ├─ (DHCP) UCI::delete ipaddr, netmask, gateway, dns
-    ├─ UCI::commit("network")
-    └─ ifdown wan; ifup wan (restart interface)
+    ├─ Format option 1: Raw bytes (keep as-is)
+    ├─ Format option 2: Hex string (encode bytes to "aabbcc...")
+    └─ Format option 3: ASCII (text-only, skip non-printable)
     │
     ▼
-Get live status via NetworkStatus::get_current()
-    ├─ ip addr show eth0.2 (parse IP, netmask)
-    ├─ ip route (parse gateway)
-    └─ cat /tmp/resolv.conf.d/resolv.conf.auto (parse DNS)
-    │
-    ▼
-Render response (HTML form or JSON)
+Broadcast<Vec<u8>> to all subscribers:
+    ├─ TCP server ──────▶ Send to all clients
+    ├─ TCP client ──────▶ Send upstream
+    ├─ MQTT tx ─────────▶ std::sync::mpsc (to MQTT publisher OS thread)
+    └─ HTTP tx ─────────▶ tokio::sync::mpsc (to HTTP publisher async task)
 ```
+
+**Configuration (from /etc/config/ugate):**
+
+```ini
+config uart 'main'
+    option enabled '1'
+    option port '/dev/ttyS0'       # UART device
+    option baudrate '115200'       # 9600, 19200, 38400, 57600, 115200
+    option data_bits '8'           # 7, 8
+    option parity 'none'           # none, even, odd
+    option stop_bits '1'           # 1, 2
+    option frame_mode 'line'       # line, fixed, timeout
+    option frame_length '128'      # for fixed mode: bytes
+    option frame_timeout_ms '100'  # for timeout mode: ms
+    option gap_ms '10'             # between bytes before EOF
+```
+
+### 3. Configuration Management (config.rs)
+
+**Responsibility:** UCI-based config with hot-reload notification
+
+**Architecture:**
+
+```
+AppState (Arc<_>)
+    │
+    ├─ config: RwLock<Config>     ← Thread-safe read-heavy access
+    └─ config_tx: watch::Sender   ← Notify UART/HTTP on change
+         │
+         └─ config_rx: watch::Receiver (for MQTT: polling every 2s)
+    │
+    ▼
+Config struct contains:
+    ├─ mqtt: MqttConfig (broker, port, auth, tls, topic, qos)
+    ├─ http: HttpConfig (url, method POST/GET)
+    ├─ tcp: TcpConfig (mode: server/client/both, ports, host)
+    ├─ uart: UartConfig (port, baud, frame mode, timeout)
+    ├─ gpio: GpioConfig (32+ GPIO line definitions)
+    ├─ web: WebConfig (port, password, max_ws_conn)
+    └─ general: GeneralConfig (log_level, buffer_ram_limit)
+    │
+    ▼
+Load from UCI:
+    uci get ugate.mqtt.broker
+    uci get ugate.http.enabled
+    → Defaults if missing or invalid
+    │
+    ▼
+On HTTP POST /api/config:
+    1. Parse JSON payload
+    2. Update AppState::config (RwLock write lock)
+    3. Save back to UCI with uci set + uci commit
+    4. Broadcast config_tx.send(()) ← Wake UART/HTTP
+    5. MQTT polls every 2s (can't use watch in std::thread)
+```
+
+### 4. Command Dispatch (commands.rs)
 
 **Configuration Flow (UCI):**
 
@@ -199,100 +287,171 @@ eth0.2 now has static IP (verified via ip addr show eth0.2)
 | Primary DNS | Valid IPv4 (if not empty) | "Invalid primary DNS" |
 | Secondary DNS | Valid IPv4 (if not empty) | "Invalid secondary DNS" |
 
-### 3. Configuration Manager (config.rs)
+**Responsibility:** Convert incoming commands to GPIO/UART TX actions
 
-**Thread-Safe Config Storage with Watch Notification:**
-
-```rust
-pub struct AppState {
-    config: RwLock<Config>,           // RwLock for concurrent reads
-    config_tx: watch::Sender<()>,     // Notify subscribers on update
-}
-
-pub struct Config {
-    mqtt: MqttConfig,
-    http: HttpConfig,
-    uart: UartConfig,
-    general: GeneralConfig,
-}
-```
-
-**Access Pattern:**
+**Architecture:**
 
 ```
-HTTP Server (spawn_blocking)     Tokio Tasks              std::thread (MQTT)
-    │                                │                          │
-    ├─ state.get() ───────────▶ RwLock read                    │
-    │  (read-only)             Clone Config                    │
-    │                              │                           │
-    ├─ state.update() ─────────▶ RwLock write                  │
-    │  (write + notify)         Save to file                   │
-    │                           config_tx.send(())             │
-    │                              │                           │
-    │                              ▼                           │
-    │                          config_rx.changed() ────────────│
-    │                          (UART reader, HTTP publisher)   │
-    │                                                          │
-    └──────────────────────────────────────────────────────▶ Polls state.get() every 2s
-                                                            (cannot use async watch)
-```
-
-**RwLock Benefits:**
-- Multiple concurrent readers (publishers reading config)
-- Exclusive writer (HTTP server updating config)
-- Better performance than Mutex for read-heavy workloads
-
-**Watch Channel:**
-- `config_tx.send(())` notifies all async subscribers immediately
-- MQTT publisher polls because it runs in std::thread (not async)
-
-### 4. UART & Data Publishing (v2.0 Hybrid Architecture)
-
-**Hybrid Async/Sync Task Architecture:**
-
-Due to rumqttc compatibility issues on MIPS, the architecture uses a hybrid approach:
-- **Tokio tasks** for UART reading, HTTP publishing, OLED display
-- **std::thread** for MQTT publishing (rumqttc sync Client works better on MIPS)
-
-```
-Startup (main.rs) - #[tokio::main(flavor = "current_thread")]
-    │
-    ├─ Create std::sync::mpsc::channel for UART → MQTT (cross-thread)
-    ├─ Create tokio::sync::mpsc::channel for UART → HTTP (async, capacity 64)
-    ├─ Create tokio::sync::watch<()> for config change notifications
-    ├─ std::thread::spawn(mqtt_publisher::run_sync)  ← OS thread, NOT tokio
-    ├─ tokio::spawn(uart_reader::run)
-    ├─ tokio::spawn(http_publisher::run)
-    ├─ tokio::spawn(oled::display_loop)
-    └─ tokio::task::spawn_blocking(run_http_server)  ← tiny-http blocking
+Command Sources:
+    ├─ WebSocket: /ws → json_parse_command() → Command enum
+    ├─ TCP: binary/JSON from server/client
+    ├─ HTTP Response: from POST response body
+    ├─ MQTT Sub: message on config.mqtt.sub_topic
+    └─ API: POST /api/gpio/{pin}
     │
     ▼
-UART Reader (tokio::spawn + AsyncFd + epoll)
-    │
-    ├─ AsyncFd wraps /dev/ttyS* for epoll-based non-blocking I/O
-    ├─ tokio::select! { config_rx.changed(), async_fd.readable() }
-    ├─ On data: format JSON, send to both channels
-    │   ├─ mqtt_tx.send(json) → std::sync::mpsc (blocking, but fast)
-    │   └─ http_tx.try_send(json) → tokio::sync::mpsc (non-blocking)
-    └─ On config change: reconnect with new UART settings
+Command enum variants:
+    ├─ GpioSet { pin: u8, state: bool }
+    ├─ GpioToggle { pin: u8 }
+    ├─ GpioPulse { pin: u8, ms: u16 }
+    ├─ UartTx { data: String }
+    └─ UartTxHex { data: Vec<u8> }
     │
     ▼
-MQTT Publisher (std::thread::spawn) - SYNC, NOT async
+Command merge (tokio::mpsc) → dispatcher:
     │
-    ├─ rumqttc::Client (sync) + separate connection thread
-    ├─ uart_rx.recv_timeout(1s) for UART data
-    ├─ Periodic system info publish (configurable interval)
-    ├─ Config polling every 2s (cannot use watch in std::thread)
-    └─ On config change: return and reconnect
+    ├─ GPIO command → gpio_tx (async channel to GPIO task)
+    ├─ UART command → uart_writer::queue (async enqueue)
+    └─ Echo back to WebSocket clients (via broadcast)
     │
     ▼
-HTTP Publisher (tokio::spawn)
+GPIO task (gpio.rs):
+    ├─ Apply chardev ioctl for GPIO control
+    ├─ Queue GPIO state changes
+    └─ Count GPIO operations (SharedStats)
     │
-    ├─ tokio::select! { config_watch.changed(), uart_rx.recv(), interval.tick() }
-    ├─ On UART data: spawn_blocking(ureq POST)
-    ├─ On interval: spawn_blocking(ureq POST system info)
-    └─ On config change: reload settings
+    ▼
+UART Writer (uart/writer.rs):
+    └─ Async write to /dev/ttyS* (queued, non-blocking)
+
+**Responsibility:** Async publish UART frames to MQTT broker, subscribe to command topic
+
+**Architecture (std::thread + rumqttc sync Client):**
+
+**Why std::thread?** rumqttc AsyncClient causes hangs on MIPS; sync Client in OS thread is more stable.
+
 ```
+std::thread::spawn(mqtt::run_sync)
+    │
+    ├─ Create rumqttc::Client (with auth, TLS, client_id)
+    ├─ Connect to broker (with exponential backoff on failure)
+    ├─ Subscribe to config.mqtt.sub_topic (for command RX)
+    │
+    ├─ Main loop:
+    │   ├─ tokio/std select! (polling style):
+    │   │   ├─ UART RX: uart_rx.recv_timeout(1s) → publish to config.mqtt.topic
+    │   │   ├─ MQTT RX: client.poll(100ms) → parse command → send via mqtt_cmd_tx
+    │   │   └─ Periodic: every N seconds publish system info
+    │   │
+    │   └─ On config change (via config_notify_rx): return and reconnect
+    │
+    ├─ Offline buffer: on connection loss
+    │   ├─ Queue messages in OfflineBuffer (RAM → /tmp/ugate_buffer on overflow)
+    │   ├─ On reconnect: pop buffer first (FIFO), then new messages
+    │   └─ HEX encoding for binary data safety
+    │
+    └─ QoS handling: 0 (fire-forget), 1 (at least once), 2 (exactly once)
+```
+
+**Configuration:**
+
+```ini
+config mqtt 'main'
+    option enabled '1'
+    option broker 'mqtt.example.com'
+    option port '1883'
+    option tls '0'
+    option client_id 'ugate-123'
+    option username 'user'
+    option password 'pass'
+    option topic 'device/sensor/data'
+    option sub_topic 'device/sensor/cmd'
+    option qos '1'
+```
+
+### 6. HTTP Publisher (channels/http_pub.rs)
+
+**Responsibility:** POST UART frames to HTTP endpoint, parse response as commands
+
+**Architecture (async + spawn_blocking):**
+
+```
+tokio::spawn(http_pub::run)
+    │
+    ├─ Create ureq::Agent (timeout=10s)
+    │
+    ├─ Main loop (tokio::select!):
+    │   ├─ config_watch.changed() → reload URL/method
+    │   │
+    │   └─ data_rx.recv() → {
+    │       ├─ Format: hex or JSON {"data":"aabbcc","len":3}
+    │       ├─ spawn_blocking(ureq POST/GET)
+    │       │   ├─ POST to config.http.url
+    │       │   ├─ Read response body (max 10KB to avoid OOM)
+    │       │   └─ Parse response: JSON command or raw UART TX data
+    │       └─ Send response command via cmd_tx
+    │   }
+    │
+    └─ Offline buffer: not implemented (HTTP 200 = success)
+```
+
+**Configuration:**
+
+```ini
+config http 'main'
+    option enabled '1'
+    option url 'https://api.example.com/sensor/data'
+    option method 'post'              # post or get
+```
+
+### 7. TCP Channels (channels/tcp.rs)
+
+**Responsibility:** Bi-directional TCP server/client for Modbus and custom protocols
+
+**Architecture (separate async tasks):**
+
+```
+TCP Server: tokio::spawn(tcp::run_server)
+    │
+    ├─ Bind 0.0.0.0:config.tcp.server_port
+    ├─ Accept connections in async loop
+    ├─ Per-connection: AsyncFd for epoll (non-blocking)
+    │   ├─ On RX: parse frame (binary, JSON, or Modbus RTU)
+    │   ├─ Parse as Command (if recognized)
+    │   ├─ Send via cmd_tx → dispatcher
+    │   │
+    │   ├─ On broadcast_rx: send UART data to client
+    │   ├─ Buffer frames (OfflineBuffer on client slow)
+    │   └─ Handle disconnect gracefully
+    │
+    └─ Track connection count (for connection pooling, max=32)
+
+TCP Client: tokio::spawn(tcp::run_client)
+    │
+    ├─ Connect to config.tcp.client_host:client_port
+    ├─ Exponential backoff on connection failure (2s, 4s, 8s, max 60s)
+    │
+    ├─ Main loop:
+    │   ├─ On RX: parse frame → parse command → send via cmd_tx
+    │   ├─ On broadcast_rx: send UART data upstream
+    │   │
+    │   └─ On config change: reconnect
+    │
+    └─ Offline buffer: queue messages during disconnect
+```
+
+**Configuration:**
+
+```ini
+config tcp 'main'
+    option enabled '1'
+    option mode 'both'                # server, client, both
+    option server_port '502'          # Modbus TCP default
+    option client_host 'gateway.local'
+    option client_port '502'
+```
+
+### 8. Hybrid Async/Sync Task Architecture
 
 **Channel Architecture (Actual Implementation):**
 - **UART → MQTT:** `std::sync::mpsc::channel<String>` (cross-thread compatible, required for std::thread)

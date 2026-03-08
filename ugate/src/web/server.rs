@@ -108,6 +108,10 @@ pub fn run(
             (tiny_http::Method::Post, "/api/wifi/disconnect") => {
                 crate::web::wifi::handle_disconnect()
             }
+            (tiny_http::Method::Post, "/api/wifi/mode") => {
+                let body = read_body(&mut request);
+                crate::web::wifi::handle_set_mode(&body)
+            }
 
             // Network config (LAN/WAN)
             (tiny_http::Method::Get, "/api/network") => {
@@ -152,10 +156,48 @@ pub fn run(
                 crate::web::netcfg::handle_delete_route(name)
             }
 
+            // WAN discovery
+            (tiny_http::Method::Get, "/api/wan/discover") => {
+                crate::web::netcfg::handle_wan_discover()
+            }
+
             // Interface metric
             (tiny_http::Method::Post, "/api/interface/metric") => {
                 let body = read_body(&mut request);
                 crate::web::netcfg::handle_set_metric(&body)
+            }
+
+            // Maintenance
+            (tiny_http::Method::Get, "/api/version") => {
+                crate::web::maintenance::handle_version()
+            }
+            (tiny_http::Method::Get, "/api/backup") => {
+                crate::web::maintenance::handle_backup()
+            }
+            (tiny_http::Method::Post, "/api/restore") => {
+                crate::web::maintenance::handle_restore(&mut request, &state)
+            }
+            (tiny_http::Method::Post, "/api/factory-reset") => {
+                crate::web::maintenance::handle_factory_reset(&state)
+            }
+            (tiny_http::Method::Post, "/api/restart") => {
+                crate::web::maintenance::handle_restart()
+            }
+            (tiny_http::Method::Post, "/api/upgrade") => {
+                crate::web::maintenance::handle_upgrade_upload(&mut request)
+            }
+            (tiny_http::Method::Get, "/api/upgrade/url") => {
+                crate::web::maintenance::handle_get_upgrade_url()
+            }
+            (tiny_http::Method::Post, "/api/upgrade/url") => {
+                let body = read_body(&mut request);
+                crate::web::maintenance::handle_set_upgrade_url(&body)
+            }
+            (tiny_http::Method::Get, "/api/upgrade/check") => {
+                crate::web::maintenance::handle_upgrade_check()
+            }
+            (tiny_http::Method::Post, "/api/upgrade/remote") => {
+                crate::web::maintenance::handle_upgrade_remote()
             }
 
             _ => {
@@ -383,7 +425,7 @@ fn handle_get_status(_state: &AppState) -> tiny_http::Response<std::io::Cursor<V
 }
 
 fn handle_gpio(
-    request: &mut tiny_http::Request,
+    _request: &mut tiny_http::Request,
     path: &str,
     ws_manager: &WsManager,
 ) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
@@ -421,12 +463,33 @@ fn handle_gpio(
 
 fn handle_change_password(
     request: &mut tiny_http::Request,
-    _state: &AppState,
+    state: &AppState,
 ) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
-    let _body = read_body(request);
-    // TODO: Parse và save password qua UCI
-    log::info!("[HTTP] Password change request");
-    tiny_http::Response::from_string(r#"{"ok":true}"#).with_header(content_type_json())
+    let body = read_body(request);
+    let old_pw = crate::web::jval(&body, "old_password").unwrap_or_default();
+    let new_pw = crate::web::jval(&body, "new_password").unwrap_or_default();
+
+    if new_pw.is_empty() || new_pw.len() < 4 {
+        return crate::web::json_err(400, "password must be at least 4 characters");
+    }
+
+    // Verify old password
+    let cfg = state.get();
+    if old_pw != cfg.web.password {
+        return crate::web::json_err(401, "wrong current password");
+    }
+
+    // Save new password to UCI
+    let _ = crate::uci::Uci::set("ugate.@web[0].password", &new_pw);
+    let _ = crate::uci::Uci::commit("ugate");
+
+    // Update in-memory config
+    let mut new_cfg = cfg;
+    new_cfg.web.password = new_pw;
+    state.update(new_cfg);
+
+    log::info!("[HTTP] Password changed");
+    crate::web::json_resp(r#"{"ok":true}"#)
 }
 
 fn read_body(request: &mut tiny_http::Request) -> String {

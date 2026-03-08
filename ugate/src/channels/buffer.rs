@@ -1,6 +1,7 @@
 //! Bộ đệm offline: lưu dữ liệu khi mất kết nối
 //! RAM queue → tràn thì ghi ra disk (/tmp/ugate_buffer/)
 //! Khi kết nối lại, đọc từ disk trước rồi mới tới RAM
+#![allow(dead_code, unused_imports)]
 
 use std::collections::VecDeque;
 use std::io::{BufRead, Write};

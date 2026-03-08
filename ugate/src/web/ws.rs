@@ -2,7 +2,7 @@
 //! Vì tiny-http upgrade trả Box<dyn ReadWrite> (không split được),
 //! dùng 1 thread duy nhất + set read timeout ngắn để luân phiên đọc/ghi
 
-use crate::commands::{self, Command};
+use crate::commands::Command;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -28,12 +28,14 @@ impl WsManager {
     }
 
     /// Broadcast dữ liệu tới tất cả WS clients
+    #[allow(dead_code)]
     pub fn broadcast(&self, data: String) {
         let _ = self.broadcast_tx.send(data);
     }
 }
 
 /// Wrapper để set read timeout trên raw fd (nếu stream là socket)
+#[allow(dead_code)]
 fn try_set_read_timeout(stream: &dyn std::any::Any, timeout: std::time::Duration) {
     // Thử downcast sang TcpStream để set timeout
     if let Some(tcp) = stream.downcast_ref::<std::net::TcpStream>() {
@@ -64,7 +66,7 @@ where
     log::info!("[WS] Kết nối mới (tổng: {})", manager.connections.load(Ordering::Relaxed));
 
     let mut broadcast_rx = manager.broadcast_tx.subscribe();
-    let cmd_tx = manager.cmd_tx.clone();
+    let _cmd_tx = manager.cmd_tx.clone();
 
     // Single-thread loop: gửi broadcast trước, rồi thử đọc (non-blocking)
     loop {

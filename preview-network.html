@@ -7,7 +7,7 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
-.app{max-width:1000px;margin:0 auto;padding:16px}
+.app{max-width:800px;margin:0 auto;padding:16px}
 header{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #334155;margin-bottom:16px}
 header h1{font-size:1.2rem;color:#38bdf8}
 header .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
@@ -19,8 +19,7 @@ nav button.active{background:#334155;color:#f1f5f9;border-color:#475569}
 .card{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:16px;margin-bottom:12px}
 .card h3{font-size:.9rem;color:#94a3b8;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}
-@media(max-width:520px){.grid{grid-template-columns:1fr}}
-.grid div{display:flex;gap:8px;padding:4px 0}
+.grid div{display:flex;justify-content:space-between;padding:4px 0}
 .grid label{color:#64748b;font-size:.85rem}
 .grid span{color:#e2e8f0;font-size:.85rem;font-weight:500}
 .gpio-btns{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
@@ -32,15 +31,13 @@ nav button.active{background:#334155;color:#f1f5f9;border-color:#475569}
 .login button{padding:10px 32px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-size:1rem}
 .login .error{color:#ef4444;font-size:.85rem}
 .cf{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:10px 32px;align-items:center;font-size:.85rem;color:#94a3b8}
-@media(max-width:520px){.cf{grid-template-columns:auto 1fr;gap:8px 12px}.cf .full{grid-column:1/-1}}
 .cf .full{grid-column:2/5}
-.cf .lbl{white-space:nowrap;min-width:80px;color:#64748b}
-.cf>span{color:#e2e8f0;font-weight:500}
+.cf .lbl{white-space:nowrap;min-width:100px}
 .cf .gap{grid-column:1/-1;height:0;border-top:1px solid #334155;margin:2px 0}
 .cf input[type=text],.cf input[type=number],.cf input[type=password],.cf select{padding:6px 10px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:4px;font-size:.85rem;width:100%}
 .cf .sw-wrap{display:flex;align-items:center;justify-content:flex-end}
 .save-btn{padding:10px 32px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:.9rem;display:block;margin:8px auto 0}
-.stream{background:#0f172a;border:1px solid #334155;border-radius:4px;padding:8px;flex:1;min-height:0;overflow-y:auto;font-family:monospace;font-size:.75rem;color:#94a3b8}
+.stream{background:#0f172a;border:1px solid #334155;border-radius:4px;padding:8px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:.75rem;color:#94a3b8}
 .stream div{padding:2px 0;border-bottom:1px solid #1e293b}
 /* iOS-style switch */
 .sw{position:relative;width:44px;height:24px;flex-shrink:0}
@@ -84,7 +81,7 @@ nav button.active{background:#334155;color:#f1f5f9;border-color:#475569}
 <body>
 <div id="app" class="app"></div>
 <script>
-const S={page:'login',ws:null,connected:false,status:{},config:null,stream:[],loginErr:'',password:'',hexView:false,net:null,wifi:{networks:[],scanning:false,status:null},ntp:null,routes:null,wanIfaces:null,newRoute:{name:'',target:'',netmask:'255.255.255.0',gateway:'',interface:'wan'},pendingChanges:false,sys:{version:null,updateInfo:null,checkingUpdate:false,upgradeUrl:''}};
+const S={page:'network',ws:null,connected:false,status:{},config:null,stream:[],loginErr:'',password:'',hexView:false,net:null,wifi:{networks:[],scanning:false,status:null},ntp:null,routes:null,newRoute:{name:'',target:'',netmask:'255.255.255.0',gateway:'',interface:'wan'},pendingChanges:false};
 function $(s,p){return(p||document).querySelector(s)}
 function h(tag,attrs,...ch){
   const el=document.createElement(tag);
@@ -103,7 +100,7 @@ function render(){
   root.append(
     h('header',{},h('h1',{},'uGate - From UART to the world'),h('span',{},h('span',{cls:'dot '+(S.connected?'on':'off')}),'WS')),
     renderNav(),
-    pg==='status'?renderStatus():pg==='config'?renderConfig():pg==='network'?renderNetwork():pg==='routing'?renderRouting():pg==='uart'?renderUart():pg==='system'?renderSystem():h('div',{})
+    pg==='status'?renderStatus():pg==='config'?renderConfig():pg==='network'?renderNetwork():pg==='uart'?renderUart():pg==='data'?renderData():h('div',{})
   );
 }
 function renderLogin(root){
@@ -120,7 +117,7 @@ async function doLogin(){
   else{S.loginErr='Sai mật khẩu';render()}
 }
 function renderNav(){
-  const tabs=[['status','Trạng thái'],['config','Truyền thông'],['uart','UART'],['network','Mạng'],['routing','Định tuyến'],['system','Hệ thống']];
+  const tabs=[['status','Trạng thái'],['config','Cấu hình'],['network','Mạng'],['uart','UART'],['data','Dữ liệu']];
   return h('nav',{},...tabs.map(([id,label])=>h('button',{cls:S.page===id?'active':'',onclick:()=>{S.page=id;render()}},label)));
 }
 // --- Status page ---
@@ -148,25 +145,6 @@ function chBadge(state,enabled){
   if(state==='disabled')return h('span',{cls:'ch-badge disabled'},'off');
   return h('span',{cls:'ch-badge disconnected'},state||'disconnected');
 }
-function renderWifiStatus(){
-  if(!S.wifi.status){loadWifiStatus().then(render);return h('div',{})}
-  const ws=S.wifi.status;
-  if(ws.mode==='off')return h('div',{});
-  const sta=ws.sta||{};const ap=ws.ap||{};
-  const items=[];
-  items.push(lbl('Chế độ'),h('span',{},ws.mode==='sta'?'STA':ws.mode==='ap'?'AP':'STA + AP'));
-  if(ws.mode!=='ap'){
-    const staVal=sta.connected
-      ?h('span',{style:'display:flex;align-items:center;gap:6px;color:#22c55e'},signalBars(sta.signal),sta.ssid||sta.config_ssid,' ',sta.signal+' dBm')
-      :h('span',{style:'color:#ef4444'},'Ngắt');
-    items.push(lbl('STA'),staVal);
-    if(sta.connected)items.push(lbl('IP'),h('span',{},sta.ip||'-'));
-  }
-  if(ws.mode!=='sta'){
-    items.push(lbl('AP'),h('span',{style:'color:'+(ap.active?'#22c55e':'#64748b')},ap.active?ap.ssid:'Tắt'));
-  }
-  return h('div',{cls:'card'},h('h3',{},'WiFi'),h('div',{cls:'cf'},...items));
-}
 function renderStatus(){
   const s=S.status||{};const u=s.uart||{};const m=s.mqtt||{};const hp=s.http||{};const t=s.tcp||{};const g=s.gpio||[];
   const cpu=s.cpu||0;const ru=s.ram_used||0;const rt=s.ram_total||0;
@@ -177,10 +155,9 @@ function renderStatus(){
   }
   return h('div',{},
     h('div',{cls:'card'},h('h3',{},'Hệ thống'),
-      h('div',{style:'display:grid;grid-template-columns:auto 1fr auto 1fr auto 1fr;gap:8px 16px;align-items:center;font-size:.85rem'},
-        h('span',{style:'color:#64748b;white-space:nowrap'},'Phiên bản'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'ver'},s.version||'-'),
-        h('span',{style:'color:#64748b;white-space:nowrap'},'Uptime'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'up'},s.uptime||'-'),
-        h('span',{style:'color:#64748b;white-space:nowrap'},'Thời gian'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'dt'},s.datetime||'-')
+      h('div',{cls:'grid'},
+        h('div',{},h('label',{},'Phiên bản'),h('span',{'data-f':'ver'},s.version||'-')),
+        h('div',{},h('label',{},'Uptime'),h('span',{'data-f':'up'},s.uptime||'-'))
       ),
       pbar('cpu','CPU',cpu,100,cpu>80?'#ef4444':cpu>50?'#f59e0b':'#22c55e',cpu+'%'),
       pbar('ram','RAM',ru,rt,ru/rt>0.8?'#ef4444':ru/rt>0.5?'#f59e0b':'#22c55e',ru+'/'+rt+' MB')
@@ -193,16 +170,15 @@ function renderStatus(){
           h('span',{style:'font-size:.7rem;color:#64748b;margin-left:6px'},'TCP:'),badge('tcp',t.state,t.enabled)
         )
       ),
-      h('div',{style:'display:grid;grid-template-columns:auto 1fr auto 1fr auto 1fr;gap:8px 16px;align-items:center;font-size:.85rem;color:#94a3b8'},
-        lbl('UART RX'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'urx'},''+(u.rx_frames??0)+' frames / '+(u.rx_bytes??0)+' B'),
-        lbl('UART TX'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'utx'},''+(u.tx_frames??0)+' frames / '+(u.tx_bytes??0)+' B'),
-        lbl('UART config'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'ucfg'},u.config||'-'),
-        lbl('MQTT pub'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'mpub'},''+(m.published??0)+' ok / '+(m.failed??0)+' fail'),
-        lbl('HTTP sent'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'hsnt'},''+(hp.sent??0)+' ok / '+(hp.failed??0)+' fail'),
-        lbl('TCP conn'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'tconn'},''+(t.connections??0))
+      h('div',{cls:'grid'},
+        h('div',{},h('label',{},'UART RX'),h('span',{'data-f':'urx'},''+(u.rx_frames??0)+' frames / '+(u.rx_bytes??0)+' B')),
+        h('div',{},h('label',{},'UART TX'),h('span',{'data-f':'utx'},''+(u.tx_frames??0)+' frames / '+(u.tx_bytes??0)+' B')),
+        h('div',{},h('label',{},'UART config'),h('span',{'data-f':'ucfg'},u.config||'-')),
+        h('div',{},h('label',{},'MQTT pub'),h('span',{'data-f':'mpub'},''+(m.published??0)+' ok / '+(m.failed??0)+' fail')),
+        h('div',{},h('label',{},'HTTP sent'),h('span',{'data-f':'hsnt'},''+(hp.sent??0)+' ok / '+(hp.failed??0)+' fail')),
+        h('div',{},h('label',{},'TCP conn'),h('span',{'data-f':'tconn'},''+(t.connections??0)))
       )
     ),
-    renderWifiStatus(),
     h('div',{cls:'card'},h('h3',{},'GPIO'),h('div',{cls:'gpio-btns'},...[0,1,2,3].map(i=>
       h('div',{cls:'gpio-btn '+(g[i]?'on':'off'),'data-gpio':''+i,onclick:()=>sendGpio(i+1,'toggle')},'Pin '+(i+1)+'\n'+(g[i]?'ON':'OFF'))
     )))
@@ -219,7 +195,7 @@ function updateStatus(){
   // Update text fields via data-field
   const f=k=>document.querySelector('[data-f="'+k+'"]');
   const set=(k,v)=>{const el=f(k);if(el)el.textContent=v};
-  set('ver',s.version||'-');set('up',s.uptime||'-');set('dt',s.datetime||'-');
+  set('ver',s.version||'-');set('up',s.uptime||'-');
   set('urx',''+(u.rx_frames??0)+' frames / '+(u.rx_bytes??0)+' B');
   set('utx',''+(u.tx_frames??0)+' frames / '+(u.tx_bytes??0)+' B');
   set('ucfg',u.config||'-');
@@ -275,20 +251,20 @@ function renderConfig(){
       lbl('Client ID'),inp('text',c.mqtt,'client_id'),lbl('QoS'),slct(c.mqtt,'qos',[['0','0'],['1','1'],['2','2']]),
       lbl('Username'),inp('text',c.mqtt,'username'),lbl('Mật khẩu'),inp('password',c.mqtt,'password'),
       gap(),
-      lbl('Publish Topic'),inp('text',c.mqtt,'topic'),
-      lbl('Subscribe Topic'),inp('text',c.mqtt,'sub_topic')
+      lbl('Publish Topic'),inp('text',c.mqtt,'topic',true),
+      lbl('Subscribe Topic'),inp('text',c.mqtt,'sub_topic',true)
     )]:[])
   );
   // HTTP
   const http=h('div',{cls:'card'},chHdr('HTTP',c.http),
     ...(c.http.enabled?[h('div',{cls:'cf'},
-      lbl('Phương thức'),slct(c.http,'method',[['post','POST'],['get','GET']]),
-      lbl('URL'),inp('text',c.http,'url')
+      lbl('Phương thức'),slct(c.http,'method',[['post','POST'],['get','GET']],true),
+      lbl('URL'),inp('text',c.http,'url',true)
     )]:[])
   );
   // TCP
-  const tcpFields=[lbl('Chế độ'),slct(c.tcp,'mode',[['server','Server (lắng nghe)'],['client','Client (kết nối tới)']],false,()=>render())];
-  if(c.tcp.mode==='server'){tcpFields.push(lbl('Cổng lắng nghe'),inp('number',c.tcp,'server_port'))}
+  const tcpFields=[lbl('Chế độ'),slct(c.tcp,'mode',[['server','Server (lắng nghe)'],['client','Client (kết nối tới)']],true,()=>render())];
+  if(c.tcp.mode==='server'){tcpFields.push(lbl('Cổng lắng nghe'),inp('number',c.tcp,'server_port',true))}
   if(c.tcp.mode==='client'){tcpFields.push(lbl('Địa chỉ server'),inp('text',c.tcp,'client_host'),lbl('Cổng đích'),inp('number',c.tcp,'client_port'))}
   const tcp=h('div',{cls:'card'},chHdr('TCP',c.tcp),
     ...(c.tcp.enabled?[h('div',{cls:'cf'},...tcpFields)]:[])
@@ -303,14 +279,12 @@ function renderUart(){
   const fields=[
     lbl('Baudrate'),slct(c.uart,'baudrate',bauds),lbl('Data Bits'),slct(c.uart,'data_bits',[['7','7'],['8','8']]),
     lbl('Parity'),slct(c.uart,'parity',[['none','None'],['even','Even'],['odd','Odd']]),lbl('Stop Bits'),slct(c.uart,'stop_bits',[['1','1'],['2','2']]),
-    lbl('Frame Mode'),slct(c.uart,'frame_mode',[['none','None (Gap)'],['frame','Frame (Fixed)'],['modbus','Modbus RTU']],false,()=>render())
+    lbl('Frame Mode'),slct(c.uart,'frame_mode',[['none','None (Gap)'],['frame','Frame (Fixed)'],['modbus','Modbus RTU']],true,()=>render())
   ];
-  if(fm==='none')fields.push(lbl('Gap (ms)'),inp('number',c.uart,'gap_ms'));
+  if(fm==='none')fields.push(lbl('Gap (ms)'),inp('number',c.uart,'gap_ms',true));
   if(fm==='frame'){fields.push(lbl('Frame Length'),inp('number',c.uart,'frame_length'),lbl('Frame Timeout (ms)'),inp('number',c.uart,'frame_timeout_ms'))}
-  if(fm==='modbus')fields.push(lbl('Frame Timeout (ms)'),inp('number',c.uart,'frame_timeout_ms'));
-  return h('div',{style:'display:flex;flex-direction:column;height:calc(100vh - 120px)'},
-    h('div',{cls:'card',style:'flex-shrink:0'},h('h3',{},'Cài đặt UART'),h('div',{cls:'cf'},...fields),h('button',{cls:'save-btn',onclick:saveConfig},'Lưu cấu hình')),
-    renderData());
+  if(fm==='modbus')fields.push(lbl('Frame Timeout (ms)'),inp('number',c.uart,'frame_timeout_ms',true));
+  return h('div',{},h('div',{cls:'card'},h('h3',{},'UART'),h('div',{cls:'cf'},...fields)),h('button',{cls:'save-btn',onclick:saveConfig},'Lưu cấu hình'));
 }
 async function loadConfig(){
   const r=await fetch('/api/config');if(r.ok){S.config=await r.json();render();}
@@ -350,7 +324,7 @@ function fmtRow(d){
 let _streamEl=null,_rendered=0;
 function renderData(){
   // Incremental: chỉ append rows mới thay vì rebuild toàn bộ
-  if(_streamEl&&S.page==='uart'){
+  if(_streamEl&&S.page==='data'){
     while(_rendered<S.stream.length){
       const row=fmtRow(S.stream[_rendered]);
       if(row)_streamEl.append(row);
@@ -360,7 +334,7 @@ function renderData(){
     return _streamEl.parentElement;
   }
   _rendered=0;
-  _streamEl=h('div',{cls:'stream',style:'flex:1;overflow-y:auto;min-height:0'});
+  _streamEl=h('div',{cls:'stream',style:'max-height:calc(100vh - 220px);overflow-y:auto'});
   S.stream.forEach((d,i)=>{const r=fmtRow(d);if(r)_streamEl.append(r);_rendered=i+1});
   setTimeout(()=>{if(_streamEl)_streamEl.scrollTop=_streamEl.scrollHeight},10);
   const toolbar=h('div',{style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'},
@@ -372,7 +346,7 @@ function renderData(){
       h('button',{style:'padding:4px 12px;background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:4px;cursor:pointer;font-size:.75rem',onclick:()=>{S.stream=[];_streamEl=null;_rendered=0;render()}},'Xoá')
     )
   );
-  return h('div',{cls:'card',style:'flex:1;display:flex;flex-direction:column;padding-bottom:8px;min-height:0;overflow:hidden'},toolbar,_streamEl);
+  return h('div',{cls:'card',style:'padding-bottom:8px'},toolbar,_streamEl);
 }
 // --- Network page ---
 function renderNetwork(){
@@ -385,18 +359,7 @@ function renderNetwork(){
       h('button',{style:'padding:6px 16px;background:#16a34a;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:.8rem',onclick:applyChanges},'Áp dụng & Lưu flash')
     )
   ):h('div',{});
-  return h('div',{},banner,renderWifi(),renderLanWan(),renderNtp());
-}
-function renderRouting(){
-  checkPendingChanges();
-  const banner=S.pendingChanges?h('div',{style:'background:#92400e;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center'},
-    h('span',{style:'color:#fbbf24;font-weight:600;font-size:.85rem'},'⚠ Có thay đổi chưa lưu vào flash'),
-    h('div',{style:'display:flex;gap:8px'},
-      h('button',{style:'padding:6px 16px;background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:6px;cursor:pointer;font-size:.8rem',onclick:revertChanges},'Huỷ nháp'),
-      h('button',{style:'padding:6px 16px;background:#16a34a;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:.8rem',onclick:applyChanges},'Áp dụng & Lưu flash')
-    )
-  ):h('div',{});
-  return h('div',{},banner,renderMetrics(),renderRoutes());
+  return h('div',{},banner,renderWifi(),renderLanWan(),renderNtp(),renderRoutes());
 }
 function signalBars(dbm){
   const strength=dbm>-50?4:dbm>-60?3:dbm>-70?2:1;
@@ -404,62 +367,20 @@ function signalBars(dbm){
 }
 function renderWifi(){
   const w=S.wifi;
-  const ws=w.status||{};
-  const mode=ws.mode||'sta_ap';
-  if(!w._mode)w._mode=mode;
-  // Mode selector
-  const modeOpts=[['sta','STA (Client)'],['ap','AP (Phát WiFi)'],['sta_ap','STA + AP'],['off','Tắt WiFi']];
-  const modeSelect=h('select',{style:'padding:4px 8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:4px;font-size:.8rem',onchange:e=>{w._mode=e.target.value;render()}},
-    ...modeOpts.map(([v,t])=>h('option',{value:v,...(w._mode===v?{selected:''}:{})},t)));
-  // STA section — input SSID gõ tay, quét WiFi chỉ hỗ trợ điền
-  const sta=ws.sta||{};
-  if(w._staSsid==null)w._staSsid=sta.config_ssid||'';
-  if(w._staPwd==null)w._staPwd=sta.config_key||'';
-  if(!w._staEnc)w._staEnc=sta.config_enc||'psk2';
-  const secStyle='background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:12px';
-  const pwdInput=(val,onset,ph)=>{
-    const wrap=h('div',{style:'position:relative;width:100%'});
-    const input=h('input',{type:'password',value:val,placeholder:ph||'',style:'width:100%;padding:6px 32px 6px 10px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:4px;font-size:.85rem',oninput:e=>onset(e.target.value)});
-    const eye=h('span',{style:'position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#64748b;font-size:.8rem;user-select:none',onclick:()=>{const show=input.type==='password';input.type=show?'text':'password';eye.textContent=show?'◡':'◉'}}, '◉');
-    wrap.append(input,eye);return wrap;
-  };
-  const staSection=(w._mode==='sta'||w._mode==='sta_ap')?h('div',{style:secStyle},
-    h('div',{style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px'},
-      h('div',{style:'font-weight:600;color:#38bdf8;font-size:.85rem'},'STA — Kết nối WiFi'),
-      h('button',{cls:'save-btn',style:'margin:0;padding:4px 12px;font-size:.75rem;background:#334155',onclick:scanWifi},'Quét WiFi')
-    ),
-    sta.connected?h('div',{cls:'cf',style:'margin-bottom:8px'},
-      lbl('Trạng thái'),h('span',{style:'color:#22c55e'},'Đã kết nối'),
-      lbl('Tín hiệu'),h('span',{style:'display:flex;align-items:center;gap:6px'},signalBars(sta.signal),sta.signal+' dBm'),
-      lbl('IP'),h('span',{},sta.ip||'-')
-    ):h('div',{}),
-    h('div',{cls:'cf'},
-      lbl('SSID'),h('input',{type:'text',id:'sta-ssid',value:w._staSsid,placeholder:'Nhập hoặc quét WiFi',oninput:e=>{w._staSsid=e.target.value}}),
-      lbl('Mật khẩu'),pwdInput(w._staPwd,v=>{w._staPwd=v},'Để trống nếu không cần')
-    )
+  const statusEl=w.status?h('div',{cls:'grid',style:'margin-bottom:12px'},
+    h('div',{},h('label',{},'Trạng thái'),h('span',{style:'color:'+(w.status.connected?'#22c55e':'#ef4444')},w.status.connected?'Đã kết nối':'Ngắt')),
+    w.status.connected?h('div',{},h('label',{},'SSID'),h('span',{},w.status.ssid)):h('div',{}),
+    w.status.connected?h('div',{},h('label',{},'Tín hiệu'),h('span',{},w.status.signal+' dBm')):h('div',{}),
+    w.status.connected?h('div',{},h('label',{},'IP'),h('span',{},w.status.ip||'-')):h('div',{})
   ):h('div',{});
-  // AP section
-  const ap=ws.ap||{};
-  if(!w._apSsid&&w._apSsid!=='')w._apSsid=ap.ssid||'';
-  if(!w._apKey&&w._apKey!=='')w._apKey=ap.key||'';
-  if(!w._apEnc)w._apEnc=ap.encryption||'psk2';
-  if(!w._apCh)w._apCh=ap.channel||'auto';
-  const apSection=(w._mode==='ap'||w._mode==='sta_ap')?h('div',{style:secStyle},
-    h('div',{style:'font-weight:600;color:#22c55e;margin-bottom:6px;font-size:.85rem'},'AP — Phát WiFi'+(ap.active?' (đang phát)':'')),
-    h('div',{cls:'cf'},
-      lbl('Tên WiFi'),h('input',{type:'text',value:w._apSsid,oninput:e=>{w._apSsid=e.target.value}}),
-      lbl('Mật khẩu'),pwdInput(w._apKey,v=>{w._apKey=v},'Để trống = WiFi mở'),
-      ...(w._mode==='ap'?[lbl('Kênh'),h('select',{style:'padding:6px 10px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:4px;font-size:.85rem;width:100%',onchange:e=>{w._apCh=e.target.value}},
-        ...[['auto','Tự động'],...[1,2,3,4,5,6,7,8,9,10,11].map(c=>[String(c),'Kênh '+c])].map(([v,t])=>h('option',{value:v,...(w._apCh===v?{selected:''}:{})},t)))]:[h('div',{style:'grid-column:1/-1;color:#64748b;font-size:.75rem;font-style:italic'},'Kênh AP tự theo STA khi ở chế độ STA+AP')])
-    )
+  const scanBtn=h('button',{cls:'save-btn',style:'margin:0;padding:6px 16px;font-size:.8rem',onclick:scanWifi},'Quét WiFi');
+  const disconnBtn=w.status&&w.status.connected?h('button',{cls:'save-btn',style:'margin:0 0 0 8px;padding:6px 16px;font-size:.8rem;background:#ef4444',onclick:disconnectWifi},'Ngắt kết nối'):h('span',{});
+  const connForm=w._sel?h('div',{style:'display:flex;gap:8px;align-items:center;margin-top:10px'},
+    h('span',{style:'color:#38bdf8;font-size:.85rem'},w._sel.ssid),
+    h('input',{type:'password',id:'wifi-pwd',placeholder:'Mật khẩu',style:'flex:1;padding:6px 10px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:4px;font-size:.85rem',oninput:e=>{S.wifi._pwd=e.target.value},onkeydown:e=>{if(e.key==='Enter')connectWifi(w._sel.ssid,S.wifi._pwd||'')}}),
+    h('button',{cls:'save-btn',style:'margin:0;padding:6px 16px;font-size:.8rem',onclick:()=>connectWifi(w._sel.ssid,S.wifi._pwd||'')},'Kết nối')
   ):h('div',{});
-  // 2 nút: Lưu nháp (RAM) + Áp dụng (commit flash + wifi reload)
-  const btnRow=h('div',{style:'display:flex;justify-content:center;margin-top:8px'},
-    h('button',{cls:'save-btn',onclick:()=>saveWifiMode(w._mode,w)},'Lưu nháp')
-  );
-  const offNotice=w._mode==='off'?h('div',{style:'color:#94a3b8;text-align:center;padding:16px;font-size:.85rem'},'WiFi đã tắt — chỉ dùng Ethernet'):h('div',{});
-  const header=h('h3',{},'WiFi',h('div',{style:'display:flex;align-items:center;gap:8px'},modeSelect));
-  return h('div',{cls:'card'},header,offNotice,staSection,apSection,btnRow);
+  return h('div',{cls:'card'},h('h3',{},'WiFi',h('div',{style:'display:flex'},scanBtn,disconnBtn)),statusEl,connForm);
 }
 function showWifiModal(){
   const existing=document.getElementById('wifi-modal');if(existing)existing.remove();
@@ -476,15 +397,10 @@ function updateWifiModal(content,networks){
   networks.sort((a,b)=>b.signal-a.signal);
   networks.forEach(n=>{
     content.append(h('div',{cls:'wifi-item',onclick:()=>{
-      S.wifi._staSsid=n.ssid;S.wifi._staPwd='';
-      // Auto-detect encryption from scan
-      const enc=n.encryption||'';
-      if(enc.includes('WPA3')||enc.includes('SAE'))S.wifi._staEnc='sae';
-      else if(enc.includes('mixed'))S.wifi._staEnc='psk-mixed';
-      else if(enc.includes('WPA2')||enc.includes('PSK'))S.wifi._staEnc='psk2';
-      else if(enc==='none'||enc==='Open')S.wifi._staEnc='none';
+      S.wifi._sel=n;S.wifi._pwd='';
       document.getElementById('wifi-modal').remove();
       render();
+      setTimeout(()=>{const el=document.getElementById('wifi-pwd');if(el)el.focus()},100);
     }},
       h('div',{},h('div',{style:'color:#e2e8f0;font-weight:500'},n.ssid),h('div',{style:'color:#64748b;font-size:.75rem'},n.encryption)),
       h('div',{style:'display:flex;align-items:center;gap:8px'},signalBars(n.signal),h('span',{style:'color:#64748b;font-size:.75rem'},n.signal+' dBm'))
@@ -493,54 +409,40 @@ function updateWifiModal(content,networks){
 }
 function renderLanWan(){
   if(!S.net){loadNetwork();return h('div',{cls:'card'},'Đang tải...')}
-  const n=S.net;const w=n.wan;
-  if(!w._dns)w._dns=(w.dns||[]).join(',');
-  // Prefill static fields from current DHCP values when switching
-  if(w.proto==='static'&&!w.ipaddr&&w._dhcp_ip){w.ipaddr=w._dhcp_ip;w.netmask=w._dhcp_mask||'255.255.255.0';w.gateway=w._dhcp_gw||'';w._dns=w._dhcp_dns||''}
-  const fields=[lbl('Giao thức'),slct(w,'proto',[['dhcp','DHCP'],['static','Static IP']],true,()=>render())];
-  if(w.proto==='static'){
-    fields.push(lbl('IP'),inp('text',w,'ipaddr',true),lbl('Netmask'),inp('text',w,'netmask'),lbl('Gateway'),inp('text',w,'gateway'),lbl('DNS'),inp('text',w,'_dns',true));
-  }
-  return h('div',{cls:'card'},h('h3',{},'ETH WAN',h('span',{style:'font-size:.7rem;color:#64748b;font-weight:400;margin-left:8px'},'eth0.2')),
-    h('div',{cls:'cf'},...fields),
-    h('button',{cls:'save-btn',onclick:saveNetwork},'Lưu nháp'));
-}
-function renderMetrics(){
-  if(!S.wanIfaces){loadWanIfaces();return h('div',{cls:'card'},'Đang tải...')}
-  const ifaces=S.wanIfaces;
-  if(!ifaces.length)return h('div',{cls:'card'},h('h3',{},'Ưu tiên mạng'),h('div',{style:'color:#64748b;font-size:.85rem'},'Không có WAN interface nào'));
-  // Init editable metric values
-  ifaces.forEach(ifc=>{if(ifc._metric==null)ifc._metric=ifc.uci_metric||ifc.metric||'0'});
-  const fields=[];
-  ifaces.forEach(ifc=>{
-    fields.push(lbl(ifc.label),h('div',{style:'display:flex;align-items:center;gap:8px'},
-      h('input',{type:'number',value:ifc._metric,style:'width:80px;padding:6px 10px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:4px;font-size:.85rem',oninput:e=>{ifc._metric=e.target.value}}),
-      h('span',{style:'color:#64748b;font-size:.75rem'},'via '+ifc.gateway+' ('+ifc.dev+')')
-    ));
-  });
-  return h('div',{cls:'card'},h('h3',{},'Ưu tiên mạng',h('span',{style:'font-size:.7rem;color:#64748b;font-weight:400;margin-left:8px'},'Metric thấp = ưu tiên cao')),
-    h('div',{cls:'cf'},...fields),
-    h('button',{cls:'save-btn',onclick:saveMetrics},'Lưu nháp'));
+  const n=S.net;
+  const ifaceCard=(name,obj,subtitle)=>{
+    const fields=[lbl('Giao thức'),slct(obj,'proto',[['dhcp','DHCP'],['static','Static IP']],true,()=>render())];
+    if(obj.proto==='static'){
+      fields.push(lbl('IP'),inp('text',obj,'ipaddr',true),lbl('Netmask'),inp('text',obj,'netmask'),lbl('Gateway'),inp('text',obj,'gateway'),lbl('DNS'),inp('text',obj,'_dns',true));
+    }
+    return h('div',{style:'margin-bottom:8px'},h('div',{style:'display:flex;align-items:baseline;gap:8px;margin-bottom:6px'},h('span',{style:'font-weight:600;color:#38bdf8;font-size:.85rem'},name.toUpperCase()),subtitle?h('span',{style:'color:#64748b;font-size:.75rem'},subtitle):h('span',{})),h('div',{cls:'cf'},...fields));
+  };
+  // Flatten DNS array to comma string for editing
+  if(!n.lan._dns)n.lan._dns=(n.lan.dns||[]).join(',');
+  if(!n.wan._dns)n.wan._dns=(n.wan.dns||[]).join(',');
+  // Metric priority
+  if(!n._metricWan)n._metricWan=n.wan.metric||'10';
+  if(!n._metricWwan)n._metricWwan=n.wwan_metric||'20';
+  const metricSection=h('div',{style:'margin-top:8px;padding-top:8px;border-top:1px solid #334155'},
+    h('div',{style:'font-weight:600;color:#38bdf8;margin-bottom:6px;font-size:.85rem'},'Ưu tiên mạng (Metric thấp = ưu tiên cao)'),
+    h('div',{cls:'cf'},
+      lbl('ETH WAN'),inp('number',n,'_metricWan'),lbl('WiFi WAN'),inp('number',n,'_metricWwan')
+    ),
+    h('button',{cls:'save-btn',style:'margin-top:8px',onclick:saveMetrics},'Lưu ưu tiên')
+  );
+  return h('div',{cls:'card'},h('h3',{},'LAN / WAN'),ifaceCard('lan',n.lan,'AP WiFi LAN · phy0-ap0'),ifaceCard('wan',n.wan,'ETH WAN · eth0.2'),metricSection,
+    h('button',{cls:'save-btn',onclick:saveNetwork},'Lưu cấu hình mạng'));
 }
 function renderNtp(){
   if(!S.ntp){loadNtp();return h('div',{cls:'card'},'Đang tải...')}
-  const n=S.ntp;if(!n._srvs)n._srvs=[...(n.servers||[])];if(!n._srvs.length)n._srvs=[''];
-  const hdr=h('h3',{style:'display:flex;align-items:center;gap:10px'},'NTP',
-    h('label',{cls:'sw'},h('input',{type:'checkbox',...(n.enabled?{checked:''}:{}),onchange:e=>{n.enabled=e.target.checked}}),h('span',{cls:'sl'})));
-  const fields=[lbl('Timezone'),slct(n,'timezone',[['ICT-7','Asia/Ho_Chi_Minh (UTC+7)'],['CST-8','Asia/Shanghai (UTC+8)'],['JST-9','Asia/Tokyo (UTC+9)'],['WIB-7','Asia/Jakarta (UTC+7)'],['SGT-8','Asia/Singapore (UTC+8)'],['<+09>-9','Asia/Seoul (UTC+9)'],['IST-5:30','Asia/Kolkata (UTC+5:30)'],['GST-4','Asia/Dubai (UTC+4)'],['UTC0','UTC'],['GMT0','Europe/London (GMT)'],['CET-1','Europe/Paris (UTC+1)'],['EET-2','Europe/Bucharest (UTC+2)'],['EST5EDT','US/Eastern'],['CST6CDT','US/Central'],['MST7MDT','US/Mountain'],['PST8PDT','US/Pacific'],['AEST-10','Australia/Sydney (UTC+10)']])];
-  // Dynamic server inputs, 2 per row
-  n._srvs.forEach((sv,i)=>{
-    fields.push(lbl('Server '+(i+1)),h('input',{type:'text',value:sv,placeholder:'pool.ntp.org',oninput:e=>{n._srvs[i]=e.target.value}}));
-  });
-  // Add/remove buttons inline
-  const addRm=h('div',{style:'grid-column:1/-1;display:flex;gap:8px'});
-  addRm.append(h('button',{style:'padding:3px 10px;background:#1e3a5f;color:#93c5fd;border:1px solid #334155;border-radius:4px;cursor:pointer;font-size:.75rem',onclick:()=>{n._srvs.push('');render()}},'+ Thêm'));
-  if(n._srvs.length>1)addRm.append(h('button',{style:'padding:3px 10px;background:#991b1b;color:#fca5a5;border:none;border-radius:4px;cursor:pointer;font-size:.75rem',onclick:()=>{n._srvs.pop();render()}},'- Xoá cuối'));
-  fields.push(addRm);
-  const btns=h('div',{style:'display:flex;gap:8px;justify-content:center;margin-top:8px'});
-  btns.append(h('button',{cls:'save-btn',style:'margin:0;background:#334155',onclick:syncNtp},'Đồng bộ ngay'));
-  btns.append(h('button',{cls:'save-btn',style:'margin:0',onclick:saveNtp},'Lưu NTP'));
-  return h('div',{cls:'card'},hdr,h('div',{cls:'cf'},...fields),btns);
+  const n=S.ntp;if(!n._servers)n._servers=(n.servers||[]).join(',');
+  return h('div',{cls:'card'},h('h3',{},'NTP',h('div',{style:'display:flex;gap:8px'},
+    h('button',{cls:'save-btn',style:'margin:0;padding:4px 12px;font-size:.75rem;background:#334155',onclick:syncNtp},'Đồng bộ ngay'))),
+    h('div',{cls:'cf'},
+      lbl('Bật'),h('div',{cls:'sw-wrap'},swTog(n,'enabled')),lbl('Timezone'),slct(n,'timezone',[['ICT-7','Asia/Ho_Chi_Minh (UTC+7)'],['CST-8','Asia/Shanghai (UTC+8)'],['JST-9','Asia/Tokyo (UTC+9)'],['WIB-7','Asia/Jakarta (UTC+7)'],['SGT-8','Asia/Singapore (UTC+8)'],['<+09>-9','Asia/Seoul (UTC+9)'],['IST-5:30','Asia/Kolkata (UTC+5:30)'],['GST-4','Asia/Dubai (UTC+4)'],['UTC0','UTC'],['GMT0','Europe/London (GMT)'],['CET-1','Europe/Paris (UTC+1)'],['EET-2','Europe/Bucharest (UTC+2)'],['EST5EDT','US/Eastern'],['CST6CDT','US/Central'],['MST7MDT','US/Mountain'],['PST8PDT','US/Pacific'],['AEST-10','Australia/Sydney (UTC+10)']]),
+      lbl('NTP Servers'),inp('text',n,'_servers',true)
+    ),
+    h('button',{cls:'save-btn',onclick:saveNtp},'Lưu NTP'));
 }
 // Network API calls
 async function scanWifi(){
@@ -550,8 +452,8 @@ async function scanWifi(){
   catch(_){content.innerHTML='';content.append(h('div',{style:'color:#ef4444;text-align:center;padding:20px'},'Lỗi kết nối'))}
 }
 async function loadWifiStatus(){
-  try{const r=await fetch('/api/wifi/status');if(r.ok){S.wifi.status=await r.json();S.wifi._mode=null;S.wifi._staSsid=null;S.wifi._staPwd=null;S.wifi._staEnc=null;S.wifi._apSsid=null;S.wifi._apKey=null;S.wifi._apEnc=null;S.wifi._apCh=null;return}}catch(_){}
-  if(!S.wifi.status)S.wifi.status={mode:'sta_ap',sta:{connected:false,ssid:'',config_ssid:'',signal:0,ip:''},ap:{active:false,ssid:'',encryption:'',key:'',channel:''}};
+  try{const r=await fetch('/api/wifi/status');if(r.ok){S.wifi.status=await r.json();return}}catch(_){}
+  if(!S.wifi.status)S.wifi.status={connected:false,ssid:'',signal:0,ip:''};
 }
 async function connectWifi(ssid,pwd){
   try{
@@ -563,41 +465,25 @@ async function connectWifi(ssid,pwd){
 async function disconnectWifi(){
   try{await fetch('/api/wifi/disconnect',{method:'POST'});toast('Đang ngắt WiFi...','ok');setTimeout(()=>{loadWifiStatus().then(render)},5000)}catch(_){}
 }
-async function saveWifiMode(mode,w){
-  const body={mode};
-  if(mode==='sta'||mode==='sta_ap'){
-    if(w._staSsid)body.sta_ssid=w._staSsid;
-    body.sta_password=w._staPwd||'';
-  }
-  if(mode==='ap'||mode==='sta_ap'){
-    if(w._apSsid)body.ap_ssid=w._apSsid;
-    body.ap_password=w._apKey||'';
-    if(w._apCh)body.ap_channel=w._apCh;
-  }
-  try{
-    const r=await fetch('/api/wifi/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(r.ok){toast('Đã lưu chế độ WiFi (draft)','ok');S.pendingChanges=true;setTimeout(()=>{loadWifiStatus().then(render)},2000)}
-    else toast('Lỗi lưu chế độ WiFi','err');
-  }catch(_){toast('Lỗi kết nối','err')}
-}
-
 async function loadNetwork(){
   try{const r=await fetch('/api/network');if(r.ok){S.net=await r.json();render();return}}catch(_){}
   S.net={lan:{name:'lan',proto:'dhcp',ipaddr:'',netmask:'255.255.255.0',gateway:'',dns:[]},wan:{name:'wan',proto:'dhcp',ipaddr:'',netmask:'255.255.255.0',gateway:'',dns:[]}};render();
 }
 async function saveNetwork(){
-  const w=S.net.wan;const body={interface:'wan',proto:w.proto};
-  if(w.proto==='static'){body.ipaddr=w.ipaddr;body.netmask=w.netmask;body.gateway=w.gateway;body.dns=w._dns||''}
-  try{
-    const r=await fetch('/api/network',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(!r.ok){toast('Lỗi lưu WAN','err');return}
-  }catch(_){toast('Lỗi kết nối','err');return}
-  S.pendingChanges=true;toast('Đã lưu nháp (RAM)','ok');render();
+  for(const name of ['lan','wan']){
+    const obj=S.net[name];const body={interface:name,proto:obj.proto};
+    if(obj.proto==='static'){body.ipaddr=obj.ipaddr;body.netmask=obj.netmask;body.gateway=obj.gateway;body.dns=obj._dns||''}
+    try{
+      const r=await fetch('/api/network',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      if(!r.ok){toast('Lỗi lưu '+name,'err');return}
+    }catch(_){toast('Lỗi kết nối','err');return}
+  }
+  S.pendingChanges=true;toast('Đã lưu nháp (RAM). Ấn "Áp dụng" để ghi flash.','ok');render();
 }
 async function saveMetrics(){
-  if(!S.wanIfaces)return;
-  for(const ifc of S.wanIfaces){
-    try{await fetch('/api/interface/metric',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({interface:ifc.uci,metric:+(ifc._metric||0)})})}catch(_){}
+  const n=S.net;
+  for(const [iface,val] of [['wan',n._metricWan],['wwan',n._metricWwan]]){
+    try{await fetch('/api/interface/metric',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({interface:iface,metric:+val})})}catch(_){}
   }
   S.pendingChanges=true;toast('Đã lưu nháp (RAM). Ấn "Áp dụng" để ghi flash.','ok');render();
 }
@@ -606,11 +492,10 @@ async function loadNtp(){
   S.ntp={enabled:true,servers:[],timezone:'ICT-7',zonename:'Asia/Ho_Chi_Minh'};render();
 }
 async function saveNtp(){
-  const n=S.ntp;const srvs=(n._srvs||[]).filter(s=>s.trim());
-  const body={enabled:!!n.enabled,timezone:n.timezone||'',zonename:n.zonename||'',servers:srvs.join(',')};
+  const n=S.ntp;const body={enabled:!!n.enabled,timezone:n.timezone||'',zonename:n.zonename||'',servers:n._servers||''};
   try{
     const r=await fetch('/api/ntp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(r.ok)toast('Đã lưu NTP','ok');else toast('Lưu NTP lỗi','err');
+    if(r.ok){S.pendingChanges=true;toast('Đã lưu nháp (RAM). Ấn "Áp dụng" để ghi flash.','ok');render()}else toast('Lỗi lưu NTP','err');
   }catch(_){toast('Lỗi kết nối','err')}
 }
 // Interface name mapping
@@ -653,10 +538,6 @@ function renderRoutes(){
     h('button',{cls:'save-btn',onclick:addRoute},'Thêm route')
   );
 }
-async function loadWanIfaces(){
-  try{const r=await fetch('/api/wan/discover');if(r.ok){const d=await r.json();S.wanIfaces=d.interfaces||[];render();return}}catch(_){}
-  S.wanIfaces=[];render();
-}
 async function loadRoutes(){
   try{const r=await fetch('/api/routes');if(r.ok){S.routes=await r.json();render();return}}catch(_){}
   S.routes={current_table:''};render();
@@ -690,148 +571,6 @@ async function revertChanges(){
 async function syncNtp(){
   try{const r=await fetch('/api/ntp/sync',{method:'POST'});if(r.ok){const d=await r.json();toast('Đã đồng bộ ('+d.method+')','ok')}else toast('Lỗi sync','err')}catch(_){toast('Lỗi kết nối','err')}
 }
-// --- System page ---
-async function loadSysVersion(){
-  try{const r=await fetch('/api/version');if(r.ok){S.sys.version=await r.json();render();return}}catch(_){}
-  S.sys.version={version:'-',build_date:'-',git_commit:'-'};render();
-}
-async function loadUpgradeUrl(){
-  try{const r=await fetch('/api/upgrade/url');if(r.ok){const d=await r.json();S.sys.upgradeUrl=d.url||'';render()}}catch(_){}
-}
-async function saveUpgradeUrl(input){
-  const url=input.value.trim();
-  try{
-    const r=await fetch('/api/upgrade/url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
-    if(r.ok){S.sys.upgradeUrl=url;toast('Đã lưu URL','ok')}else toast('Lỗi lưu URL','err');
-  }catch(_){toast('Lỗi kết nối','err')}
-}
-async function checkUpgrade(){
-  S.sys.checkingUpdate=true;S.sys.updateInfo=null;render();
-  try{
-    const r=await fetch('/api/upgrade/check');
-    if(r.ok){S.sys.updateInfo=await r.json();S.sys.checkingUpdate=false;render()}
-    else{S.sys.checkingUpdate=false;toast('Lỗi kiểm tra cập nhật','err');render()}
-  }catch(_){S.sys.checkingUpdate=false;toast('Lỗi kết nối','err');render()}
-}
-async function doRemoteUpgrade(){
-  try{
-    const r=await fetch('/api/upgrade/remote',{method:'POST'});
-    if(r.ok)toast('Đang cài đặt firmware mới...','ok');else toast('Lỗi cài đặt','err');
-  }catch(_){toast('Lỗi kết nối','err')}
-}
-async function doUploadIpk(fileInput){
-  const file=fileInput.files[0];if(!file){toast('Chọn file .ipk','err');return}
-  try{
-    const buf=await file.arrayBuffer();
-    const r=await fetch('/api/upgrade',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:buf});
-    if(r.ok)toast('Đã nâng cấp thành công','ok');else toast('Nâng cấp thất bại','err');
-  }catch(_){toast('Lỗi kết nối','err')}
-}
-async function doRestore(fileInput){
-  const file=fileInput.files[0];if(!file){toast('Chọn file backup','err');return}
-  try{
-    const buf=await file.arrayBuffer();
-    const r=await fetch('/api/restore',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:buf});
-    if(r.ok)toast('Đã khôi phục cấu hình','ok');else toast('Khôi phục thất bại','err');
-  }catch(_){toast('Lỗi kết nối','err')}
-}
-async function doRestart(){
-  if(!confirm('Khởi động lại thiết bị?'))return;
-  try{
-    const r=await fetch('/api/restart',{method:'POST'});
-    if(r.ok)toast('Đang khởi động lại...','ok');else toast('Lỗi khởi động lại','err');
-  }catch(_){toast('Lỗi kết nối','err')}
-}
-async function doFactoryReset(){
-  if(!confirm('Tất cả cấu hình sẽ được reset về mặc định?'))return;
-  try{
-    const r=await fetch('/api/factory-reset',{method:'POST'});
-    if(r.ok)toast('Đang khôi phục mặc định...','ok');else toast('Lỗi khôi phục mặc định','err');
-  }catch(_){toast('Lỗi kết nối','err')}
-}
-function renderSystem(){
-  if(!S.sys.version){loadSysVersion();loadUpgradeUrl();return h('div',{cls:'card'},'Đang tải...')}
-  const v=S.sys.version;const ui=S.sys.updateInfo;
-  // Section 1: Firmware info
-  let ipkInput,restoreInput;
-  const updateSection=[];
-  if(S.sys.checkingUpdate){
-    updateSection.push(h('div',{cls:'spinner'}));
-  }else if(ui){
-    if(ui.has_update){
-      updateSection.push(
-        h('div',{style:'margin-top:10px;padding:10px;background:#0f172a;border:1px solid #334155;border-radius:6px'},
-          h('div',{cls:'cf'},
-            lbl('Phiên bản mới'),h('span',{},ui.version||'-'),
-            lbl('Kích thước'),h('span',{},ui.size||'-'),
-            lbl('Thay đổi'),h('span',{style:'grid-column:2/5;white-space:pre-wrap;font-size:.8rem;color:#94a3b8'},ui.changelog||'-')
-          ),
-          h('button',{cls:'save-btn',style:'background:#16a34a',onclick:doRemoteUpgrade},'Tải & Cài đặt')
-        )
-      );
-    }else{
-      updateSection.push(h('div',{style:'color:#22c55e;font-size:.85rem;margin-top:8px'},'Đã là phiên bản mới nhất'));
-    }
-  }
-  const firmware=h('div',{cls:'card'},h('h3',{},'Firmware'),
-    h('div',{style:'display:flex;gap:20px;align-items:center;margin-bottom:8px'},
-      h('span',{style:'font-size:.85rem'},h('span',{style:'color:#64748b'},'Phiên bản: '),h('span',{style:'color:#e2e8f0'},'v'+(v.version||'-'))),
-      h('span',{style:'font-size:.85rem'},h('span',{style:'color:#64748b'},'Build: '),h('span',{style:'color:#e2e8f0'},v.build_date||'-')),
-      h('span',{style:'font-size:.85rem'},h('span',{style:'color:#64748b'},'Commit: '),h('span',{style:'font-family:monospace;color:#e2e8f0'},v.git_commit||'-'))
-    ),
-    (()=>{const inp=h('input',{type:'text',value:S.sys.upgradeUrl,placeholder:'https://example.com/ugate/latest.json',style:'flex:1;padding:6px;background:#0f172a;border:1px solid #334155;border-radius:4px;color:#e2e8f0;font-size:.85rem'});return h('div',{style:'display:flex;gap:8px;align-items:center;margin-top:10px'},lbl('URL cập nhật'),inp,h('div',{style:'display:flex;gap:6px'},h('button',{cls:'save-btn',style:'margin:0;min-width:80px;white-space:nowrap',onclick:()=>saveUpgradeUrl(inp)},'Lưu'),h('button',{cls:'save-btn',style:'margin:0;min-width:140px;background:#334155;white-space:nowrap',onclick:checkUpgrade},'Kiểm tra cập nhật')))})(),
-    ...updateSection
-  );
-  // Section 2: Upload IPK
-  const ipkFile=h('input',{type:'file',accept:'.ipk',style:'display:none'});
-  const ipkLabel=h('span',{style:'color:#94a3b8;font-size:.85rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'},'Chưa chọn file');
-  const ipkChooseBtn=h('button',{cls:'save-btn',style:'margin:0;background:#334155;white-space:nowrap',onclick:()=>ipkFile.click()},'Chọn file');
-  ipkFile.onchange=()=>{ipkLabel.textContent=ipkFile.files[0]?.name||'Chưa chọn file';};
-  const uploadIpk=h('div',{cls:'card'},h('h3',{},'Nâng cấp IPK'),
-    h('div',{style:'display:flex;gap:8px;align-items:center'},
-      ipkFile,ipkChooseBtn,ipkLabel,
-      h('button',{cls:'save-btn',style:'margin:0;white-space:nowrap',onclick:()=>doUploadIpk(ipkFile)},'Nâng cấp')
-    )
-  );
-  // Section 3: Backup / Restore
-  const restoreFile=h('input',{type:'file',accept:'.config',style:'display:none'});
-  const restoreLabel=h('span',{style:'color:#94a3b8;font-size:.85rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'},'Chưa chọn file');
-  const restoreChooseBtn=h('button',{cls:'save-btn',style:'margin:0;background:#334155;white-space:nowrap',onclick:()=>restoreFile.click()},'Chọn file');
-  restoreFile.onchange=()=>{restoreLabel.textContent=restoreFile.files[0]?.name||'Chưa chọn file';};
-  const backupRestore=h('div',{cls:'card'},h('h3',{},'Sao lưu / Khôi phục'),
-    h('div',{style:'display:grid;grid-template-columns:1fr 1fr;gap:10px'},
-      h('button',{cls:'save-btn',style:'margin:0;white-space:nowrap;justify-self:start',onclick:()=>{window.location.href='/api/backup'}},'Tải backup'),
-      h('div',{style:'display:flex;gap:8px;align-items:center'},
-        restoreFile,restoreChooseBtn,restoreLabel,
-        h('button',{cls:'save-btn',style:'margin:0;white-space:nowrap',onclick:()=>doRestore(restoreFile)},'Khôi phục')
-      )
-    )
-  );
-  // Section 4: System actions
-  const actions=h('div',{cls:'card'},h('h3',{},'Hành động hệ thống'),
-    h('div',{style:'display:flex;gap:10px;flex-wrap:wrap;justify-content:center'},
-      h('button',{cls:'save-btn',style:'margin:0;min-width:160px;background:#b45309',onclick:doRestart},'Khởi động lại'),
-      h('button',{cls:'save-btn',style:'margin:0;min-width:160px;background:#991b1b',onclick:doFactoryReset},'Khôi phục mặc định')
-    )
-  );
-  // Section 5: Change password
-  const inputSt='flex:1;padding:6px;background:#0f172a;border:1px solid #334155;border-radius:4px;color:#e2e8f0;font-size:.85rem';
-  const oldPw=h('input',{type:'password',placeholder:'Mật khẩu hiện tại',style:inputSt});
-  const newPw=h('input',{type:'password',placeholder:'Mật khẩu mới (tối thiểu 4 ký tự)',style:inputSt});
-  const confirmPw=h('input',{type:'password',placeholder:'Nhập lại mật khẩu mới',style:inputSt});
-  const pwCard=h('div',{cls:'card'},h('h3',{},'Đổi mật khẩu'),
-    h('div',{style:'display:flex;gap:8px;align-items:center'},
-      oldPw,newPw,confirmPw,
-      h('button',{cls:'save-btn',style:'margin:0;white-space:nowrap',onclick:async()=>{
-        if(!newPw.value||newPw.value.length<4){toast('Mật khẩu tối thiểu 4 ký tự','err');return}
-        if(newPw.value!==confirmPw.value){toast('Mật khẩu nhập lại không khớp','err');return}
-        try{const r=await fetch('/api/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({old_password:oldPw.value,new_password:newPw.value})});
-        if(r.ok){toast('Đã đổi mật khẩu','ok');oldPw.value='';newPw.value='';confirmPw.value=''}else{const d=await r.json();toast(d.error||'Lỗi','err')}}catch(_){toast('Lỗi kết nối','err')}
-      }},'Lưu')
-    )
-  );
-  return h('div',{},firmware,uploadIpk,backupRestore,pwCard,actions);
-}
 function connectWS(){
   if(S.ws)S.ws.close();
   const ws=new WebSocket('ws://'+location.host+'/ws');
@@ -848,7 +587,7 @@ function connectWS(){
           S.stream.shift();_rendered=Math.max(0,_rendered-1);
           if(_streamEl&&_streamEl.firstChild)_streamEl.removeChild(_streamEl.firstChild);
         }
-        if(S.page==='uart'&&_streamEl){
+        if(S.page==='data'&&_streamEl){
           const row=fmtRow(d);if(row)_streamEl.append(row);_rendered=S.stream.length;
           _streamEl.scrollTop=_streamEl.scrollHeight;
         }
@@ -864,7 +603,7 @@ async function checkSession(){
   try{const r=await fetch('/api/status');if(r.ok){S.page='status';connectWS()}}catch(_){}
   render();
 }
-checkSession();
+render();
 </script>
 </body>
 </html>

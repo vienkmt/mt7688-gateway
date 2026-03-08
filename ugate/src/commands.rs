@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Bộ phân tích lệnh điều khiển GPIO và gửi dữ liệu UART TX
 //! Hỗ trợ 2 định dạng:
 //!   - Text từ UART: "GPIO:1:ON\n"

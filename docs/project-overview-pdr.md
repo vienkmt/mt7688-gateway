@@ -1,84 +1,86 @@
 # Project Overview & Product Development Requirements (PDR)
 
-**Project:** MT7688AN IoT Gateway Firmware
-**Version:** 1.0
-**Last Updated:** 2026-02-12
-**Status:** Active Development
+**Project:** ugate - MT7688 IoT Gateway Firmware
+**Version:** 2.0 (Phase 1-6 Complete)
+**Last Updated:** 2026-03-08
+**Status:** Phase 1-6 Implementation Complete
 
 ---
 
 ## Executive Summary
 
-The MT7688AN IoT Gateway is an embedded Rust application that transforms a MediaTek LinkIt Smart 7688 (MIPS 24KEc, 580MHz, 256MB RAM) into a capable IoT data aggregator and edge processing node. The firmware:
+**ugate** is a high-performance IoT Gateway firmware written in Rust for the MT7688 (MIPS 580MHz, 64MB RAM) running OpenWrt. Phases 1-6 of development are complete, providing:
 
-- Collects data from external devices via UART (e.g., sensors, MCU)
-- Publishes to cloud platforms via MQTT and HTTP
-- Provides a web-based management interface for configuration and monitoring
-- Manages network connectivity (DHCP and Static IP modes)
-- Operates reliably on highly resource-constrained hardware
+- **Real-time data acquisition** via UART with multiple frame formats (line-based, fixed-length, timeout-based)
+- **Multi-channel fan-out:** MQTT (sync), HTTP POST (async), TCP (server/client modes)
+- **Command merge:** Bi-directional control via WebSocket, TCP, and MQTT subscription
+- **GPIO control:** 32+ GPIO lines with configurable modes and timing
+- **Web management UI:** Vue.js single-page application with session authentication
+- **Offline buffering:** RAM→Disk overflow with disk→RAM priority on reconnect
+- **Flexible configuration:** UCI-based (/etc/config/ugate) with hot-reload support
+- **Embedded HTML:** Zero external dependencies for UI (embedded in binary)
 
 **Target Users:**
-- IoT device manufacturers integrating MT7688AN into products
-- Edge computing deployments requiring local data aggregation
-- IoT applications needing reliable firmware on cost-effective hardware
+- IoT manufacturers integrating MT7688 with Modbus/proprietary MCU protocols
+- Industrial gateways requiring local processing and cloud sync
+- Edge nodes in IoT deployments with limited bandwidth
 
-**Hardware:** MediaTek LinkIt Smart 7688 (MT7688AN)
-**OS:** OpenWrt 21.02
+**Hardware:** MediaTek MT7628DAN (LinkIt Smart 7688)
+**OS:** OpenWrt 24.10 (Kernel 6.6.x)
 **Architecture:** MIPS 32-bit (mipsel-unknown-linux-musl)
-**Language:** Rust (for memory safety and performance)
+**Language:** Rust with Tokio async runtime
 
 ---
 
-## Core Features (Implemented)
+## Core Features (Phases 1-6 Complete)
 
-### 1. System Monitoring Dashboard
-- **Endpoint:** GET /
-- **Displays:**
-  - System uptime
-  - CPU usage percentage
-  - Memory (RAM) usage
-  - Network interface statistics
-- **Refresh:** On-demand (no polling required)
+### Phase 1: Core Infrastructure
+- **UART Reader (AsyncFd):** Non-blocking I/O with epoll, supports line/fixed/timeout frame modes
+- **Configuration System:** UCI-based (/etc/config/ugate), hot-reload via watch channel
+- **App State:** RwLock-based thread-safe storage with tokio::sync::watch notifications
+- **Time Sync:** HTTP-based NTP before TLS operations
 
-### 2. Configuration Management
-- **Endpoint:** GET/POST /config
-- **Manages:**
-  - MQTT broker settings (URL, port, TLS, topic, client ID)
-  - HTTP publisher endpoint
-  - UART serial port configuration (port, baudrate)
-  - Data collection interval (seconds)
-- **Persistence:** In-memory (survives runtime restart)
-- **UI:** HTML form with real-time validation
+### Phase 2a: MQTT & HTTP Channels
+- **MQTT Publisher:** std::thread + rumqttc sync Client (avoids async issues on MIPS)
+  - Supports auth, TLS (rustls), QoS configurable
+  - Subscribes to command topic for bi-directional control
+  - Channel: std::sync::mpsc (cross-thread compatible)
+- **HTTP POST Publisher:** async task with ureq via spawn_blocking
+  - GET/POST methods configurable
+  - Response body parsed as JSON commands or raw UART TX
+  - Channel: tokio::sync::mpsc (capacity 64)
+- **Offline Buffer:** RAM queue → disk overflow (/tmp/ugate_buffer/) on reconnect
 
-### 3. Network Configuration (NEW - Feb 2026)
-- **Endpoints:**
-  - HTML UI: GET/POST /network
-  - JSON API: GET/POST /api/network
-- **Manages:**
-  - WAN interface (eth0.2) DHCP vs Static IP
-  - Static IP, subnet mask, gateway
-  - DNS servers (primary and secondary)
-- **Persistence:** OpenWrt UCI (/etc/config/network)
-- **Validation:**
-  - IP address format validation
-  - Subnet mask validity (contiguous bits)
-  - Gateway in same subnet check
-  - LAN conflict prevention (10.10.10.0/24 reserved)
-  - DNS format validation
-- **Application:** `ifdown wan` / `ifup wan` to activate
-- **Status Monitoring:** Live IP, netmask, gateway, DNS via system commands
+### Phase 2b: TCP + Reliability
+- **TCP Server:** Accept Modbus/binary connections, broadcast UART data to all clients
+- **TCP Client:** Connect to upstream gateway/server, send UART data, receive commands
+- **Reconnect Logic:** Exponential backoff, configurable retry intervals
+- **Both Mode:** Server + Client simultaneous operation
 
-### 4. Data Acquisition & Publishing
-- **UART Reader:** Reads serial data from /dev/ttyS2 (sensors, MCU, or any device)
-- **MQTT Publisher:** Publishes to configurable broker (with TLS support)
-- **HTTP Publisher:** POSTs to configurable endpoint
-- **Threading:** Bounded channels (128 messages) prevent OOM on 64MB device
-- **Error Handling:** Automatic reconnect with exponential backoff
+### Phase 3: Web Server & WebSocket
+- **HTTP Server:** tiny-http in spawn_blocking, port 8888
+- **WebSocket:** Real-time UART logs, system stats, status streaming via tungstenite
+- **Embedded UI:** Vue.js + Tailwind CSS embedded in binary (include_str!)
+- **REST API:** /api/* endpoints for config, status, login
 
-### 5. Time Synchronization
-- **Startup Routine:** Sync system clock before TLS operations
-- **Purpose:** Prevent certificate validation failures due to incorrect time
-- **Method:** NTP synchronization to OpenWrt time source
+### Phase 4: GPIO Control
+- **chardev ioctl:** Pure Rust GPIO control (no DTS required)
+- **32+ GPIO Lines:** Configure direction (in/out), pull-up/down, edge triggers
+- **Command Dispatch:** GPIO set/toggle/pulse via Command enum
+- **Status Tracking:** SharedStats tracks GPIO state and publish counts
+
+### Phase 5: Vue.js Frontend
+- **Single-Page App:** Vue.js framework with Tailwind CSS
+- **Pages:** Dashboard, Config, GPIO Control, Status
+- **Real-time Updates:** WebSocket for live stats, UART logs
+- **Session Auth:** Cookie-based auth, 1h expiry (RAM-based)
+
+### Phase 6: Integration & Testing
+- **Cross-platform Testing:** Deployed and tested on MT7688 (OpenWrt 24.10)
+- **Syslog Integration:** Logs to /dev/log for `logread` access
+- **Status API:** Real-time stats (uptime, CPU%, RAM%, channel states)
+- **Config API:** Full CRUD for all settings
+- **UI Auth:** Password protection with session management
 
 ---
 

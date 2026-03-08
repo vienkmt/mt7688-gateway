@@ -3,6 +3,7 @@
 //! tungstenite xử lý WebSocket cho dữ liệu real-time và lệnh điều khiển
 
 pub mod auth;
+pub mod maintenance;
 pub mod netcfg;
 pub mod server;
 pub mod status;

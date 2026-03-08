@@ -1,1 +1,4 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/phonglinh/mt7688-gateway/ugate/Cargo.toml
+workspace: /Users/phonglinh/mt7688-gateway/Cargo.toml
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s

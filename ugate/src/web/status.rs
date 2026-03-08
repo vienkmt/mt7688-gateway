@@ -3,9 +3,17 @@
 //! StatusCollector đọc /proc/* để lấy thông tin hệ thống
 
 use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+use std::sync::Mutex;
+
+/// Snapshot /proc/stat cho tính CPU delta
+struct CpuSnapshot {
+    idle: u64,
+    total: u64,
+}
 
 /// Bộ đếm atomic chia sẻ giữa UART, MQTT, TCP, GPIO tasks
 pub struct SharedStats {
+    cpu_prev: Mutex<Option<CpuSnapshot>>,
     pub uart_rx_bytes: AtomicU32,
     pub uart_rx_frames: AtomicU32,
     pub uart_tx_bytes: AtomicU32,
@@ -25,6 +33,7 @@ pub struct SharedStats {
 impl SharedStats {
     pub fn new() -> Self {
         Self {
+            cpu_prev: Mutex::new(None),
             uart_rx_bytes: AtomicU32::new(0),
             uart_rx_frames: AtomicU32::new(0),
             uart_tx_bytes: AtomicU32::new(0),
@@ -47,16 +56,40 @@ impl SharedStats {
         }
     }
 
+    /// Tính CPU% từ delta /proc/stat giữa 2 lần gọi (giống top)
+    fn read_cpu_percent(&self) -> u8 {
+        let cur = match read_proc_stat() {
+            Some(s) => s,
+            None => return 0,
+        };
+        let mut prev_lock = self.cpu_prev.lock().unwrap();
+        let pct = if let Some(prev) = prev_lock.as_ref() {
+            let d_total = cur.total.saturating_sub(prev.total);
+            let d_idle = cur.idle.saturating_sub(prev.idle);
+            if d_total == 0 {
+                0
+            } else {
+                (((d_total - d_idle) * 100) / d_total) as u8
+            }
+        } else {
+            0
+        };
+        *prev_lock = Some(cur);
+        pct
+    }
+
     /// Thu thập trạng thái thành JSON string (không dùng serde_json)
     pub fn to_status_json(&self, config: &crate::config::Config) -> String {
         let uptime = read_uptime();
+        let datetime = read_datetime();
         let (ram_used, ram_total) = read_mem_info();
-        let cpu = read_cpu_percent();
+        let cpu = self.read_cpu_percent();
 
         format!(
-            r#"{{"type":"status","version":"{}","uptime":"{}","cpu":{},"ram_used":{},"ram_total":{},"uart":{{"rx_bytes":{},"rx_frames":{},"tx_bytes":{},"tx_frames":{},"failed":{},"config":"{} 8N1"}},"mqtt":{{"enabled":{},"state":"{}","published":{},"failed":{}}},"http":{{"enabled":{},"state":"{}","sent":{},"failed":{}}},"tcp":{{"enabled":{},"state":"{}","connections":{}}},"gpio":[{},{},{},{}]}}"#,
+            r#"{{"type":"status","version":"{}","uptime":"{}","datetime":"{}","cpu":{},"ram_used":{},"ram_total":{},"uart":{{"rx_bytes":{},"rx_frames":{},"tx_bytes":{},"tx_frames":{},"failed":{},"config":"{} 8N1"}},"mqtt":{{"enabled":{},"state":"{}","published":{},"failed":{}}},"http":{{"enabled":{},"state":"{}","sent":{},"failed":{}}},"tcp":{{"enabled":{},"state":"{}","connections":{}}},"gpio":[{},{},{},{}]}}"#,
             env!("CARGO_PKG_VERSION"),
             uptime,
+            datetime,
             cpu,
             ram_used,
             ram_total,
@@ -92,6 +125,17 @@ fn state_str(s: u8) -> &'static str {
         2 => "connected",
         _ => "unknown",
     }
+}
+
+/// Đọc datetime hệ thống via `date` command
+fn read_datetime() -> String {
+    std::process::Command::new("date")
+        .arg("+%Y-%m-%d %H:%M:%S")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
 }
 
 /// Đọc uptime từ /proc/uptime
@@ -143,13 +187,20 @@ fn parse_meminfo_kb(line: &str) -> u64 {
         .unwrap_or(0)
 }
 
-/// Đọc CPU usage từ /proc/stat (xấp xỉ, snapshot)
-fn read_cpu_percent() -> u8 {
-    let content = std::fs::read_to_string("/proc/loadavg").unwrap_or_default();
-    content
+/// Đọc CPU% từ /proc/stat delta (giống top/htop)
+/// Lần gọi đầu trả 0, từ lần 2 trở đi tính delta chính xác
+fn read_proc_stat() -> Option<CpuSnapshot> {
+    let content = std::fs::read_to_string("/proc/stat").ok()?;
+    let cpu_line = content.lines().next()?; // "cpu  user nice system idle ..."
+    let vals: Vec<u64> = cpu_line
         .split_whitespace()
-        .next()
-        .and_then(|s| s.parse::<f32>().ok())
-        .map(|load| (load * 100.0).min(100.0) as u8)
-        .unwrap_or(0)
+        .skip(1) // bỏ "cpu"
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    if vals.len() < 4 {
+        return None;
+    }
+    let idle = vals[3]; // idle + iowait nếu có
+    let total: u64 = vals.iter().sum();
+    Some(CpuSnapshot { idle, total })
 }
