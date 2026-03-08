@@ -1,0 +1,14 @@
+<div style="font-size:.82rem;line-height:1.4;color:#cbd5e1">
+  <p style="color:#94a3b8;margin:0 0 10px">Bọc thêm metadata (device_name, timestamp) vào dữ liệu UART trước khi gửi.</p>
+  <h4 style="color:#60a5fa;margin:10px 0 4px;font-size:.85rem">MQTT / HTTP POST / TCP</h4>
+  <pre class="modal-pre" id="wrap-mqtt-sample"></pre>
+  <h4 style="color:#60a5fa;margin:10px 0 4px;font-size:.85rem">HTTP GET</h4>
+  <pre class="modal-pre" id="wrap-get-sample"></pre>
+  <hr style="border-color:#334155;margin:10px 0">
+  <h4 style="color:#f59e0b;margin:0 0 4px;font-size:.82rem">Text encoding</h4>
+  <div style="display:flex;gap:12px;margin:4px 0">
+    <pre class="modal-pre" style="flex:1">Text: "data": "send from mcu"</pre>
+    <pre class="modal-pre" style="flex:1">Hex: "data": "73656e64..."</pre>
+  </div>
+  <p style="color:#64748b;font-size:.75rem;margin:8px 0 0">Tắt Data Wrap: MQTT raw bytes, HTTP POST {"data":"hex","len":N}, GET ?data=hex</p>
+</div>

@@ -67,20 +67,46 @@ async fn run_publish_loop(
                 let agent = agent.clone();
                 let is_get = method == crate::config::HttpMethod::Get;
 
-                // Encode data thành hex string cho JSON payload
-                let hex: String = data.iter().map(|b| format!("{:02x}", b)).collect();
-                let json = format!(r#"{{"data":"{}","len":{}}}"#, hex, data.len());
+                // Detect wrapped JSON (bắt đầu bằng '{') hoặc raw bytes
+                let is_wrapped = data.first() == Some(&b'{');
+                // Text encoding: gửi string UTF-8, ngược lại hex
+                let data_str = if is_wrapped {
+                    // Wrapped JSON từ fan-out → gửi trực tiếp
+                    String::from_utf8_lossy(&data).into_owned()
+                } else if config.general.data_as_text {
+                    // Text mode: thử UTF-8, fallback hex
+                    match std::str::from_utf8(&data) {
+                        Ok(s) => format!(r#"{{"data":"{}","len":{}}}"#, crate::web::json_escape(s), data.len()),
+                        Err(_) => {
+                            let hex: String = data.iter().map(|b| format!("{:02x}", b)).collect();
+                            format!(r#"{{"data":"{}","len":{}}}"#, hex, data.len())
+                        }
+                    }
+                } else {
+                    let hex: String = data.iter().map(|b| format!("{:02x}", b)).collect();
+                    format!(r#"{{"data":"{}","len":{}}}"#, hex, data.len())
+                };
+                // GET query value: wrapped → parse fields, raw → data field
+                let get_query = if is_wrapped {
+                    let dname = crate::web::jval(&data_str, "device_name").unwrap_or_default();
+                    let ts = crate::web::jval(&data_str, "timestamp").unwrap_or_default();
+                    let dv = crate::web::jval(&data_str, "data").unwrap_or_default();
+                    format!("device_name={}&timestamp={}&data={}", dname, ts, dv)
+                } else {
+                    let dv = crate::web::jval(&data_str, "data").unwrap_or_default();
+                    format!("data={}", dv)
+                };
 
                 let stats_c = stats.clone();
                 let cmd_tx_c = cmd_tx.clone();
                 tokio::task::spawn_blocking(move || {
                     let result = if is_get {
                         let sep = if url.contains('?') { "&" } else { "?" };
-                        agent.get(&format!("{}{}data={}", url, sep, hex)).call()
+                        agent.get(&format!("{}{}{}", url, sep, get_query)).call()
                     } else {
                         agent.post(&url)
                             .set("Content-Type", "application/json")
-                            .send_string(&json)
+                            .send_string(&data_str)
                     };
                     match result {
                         Ok(resp) => {

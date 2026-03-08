@@ -1,24 +1,28 @@
 # Project Overview & Product Development Requirements (PDR)
 
 **Project:** ugate - MT7688 IoT Gateway Firmware
-**Version:** 2.0 (Phase 1-6 Complete)
+**Version:** 1.6.0 (Phases 1-9 Complete)
 **Last Updated:** 2026-03-08
-**Status:** Phase 1-6 Implementation Complete
+**Status:** Production Ready — All phases complete
 
 ---
 
 ## Executive Summary
 
-**ugate** is a high-performance IoT Gateway firmware written in Rust for the MT7688 (MIPS 580MHz, 64MB RAM) running OpenWrt. Phases 1-6 of development are complete, providing:
+**ugate** is a high-performance IoT Gateway firmware written in Rust for the MT7688 (MIPS 580MHz, 64MB RAM) running OpenWrt. Phases 1-9 of development are complete, providing:
 
 - **Real-time data acquisition** via UART with multiple frame formats (line-based, fixed-length, timeout-based)
 - **Multi-channel fan-out:** MQTT (sync), HTTP POST (async), TCP (server/client modes)
 - **Command merge:** Bi-directional control via WebSocket, TCP, and MQTT subscription
 - **GPIO control:** 32+ GPIO lines with configurable modes and timing
-- **Web management UI:** Vue.js single-page application with session authentication
+- **Web management UI:** Vanilla JavaScript SPA with 6 tabs (Status, Communication, UART, Network, Routing, System)
+- **WiFi Management:** 4 modes (STA/AP/STA+AP/Off) with scan, status, and mode switching
+- **Network Configuration:** LAN/WAN, ETH/WiFi interfaces, NTP sync, static routing
+- **System Maintenance:** Backup/restore, factory reset, firmware upgrade (local IPK + remote URL)
+- **Session Authentication:** Token-based (max 4 sessions, 24h TTL, rate-limited)
 - **Offline buffering:** RAM→Disk overflow with disk→RAM priority on reconnect
-- **Flexible configuration:** UCI-based (/etc/config/ugate) with hot-reload support
-- **Embedded HTML:** Zero external dependencies for UI (embedded in binary)
+- **Flexible configuration:** UCI-based (/etc/config/ugate) with hot-reload and draft/apply pattern
+- **Embedded HTML:** Zero external dependencies for UI (870-line SPA embedded in binary)
 
 **Target Users:**
 - IoT manufacturers integrating MT7688 with Modbus/proprietary MCU protocols
@@ -32,7 +36,7 @@
 
 ---
 
-## Core Features (Phases 1-6 Complete)
+## Core Features (Phases 1-9 Complete)
 
 ### Phase 1: Core Infrastructure
 - **UART Reader (AsyncFd):** Non-blocking I/O with epoll, supports line/fixed/timeout frame modes
@@ -60,8 +64,8 @@
 ### Phase 3: Web Server & WebSocket
 - **HTTP Server:** tiny-http in spawn_blocking, port 8888
 - **WebSocket:** Real-time UART logs, system stats, status streaming via tungstenite
-- **Embedded UI:** Vue.js + Tailwind CSS embedded in binary (include_str!)
-- **REST API:** /api/* endpoints for config, status, login
+- **Embedded UI:** Vanilla JavaScript SPA embedded in binary (include_str!)
+- **REST API:** /api/* endpoints for config, status, login, network, WiFi
 
 ### Phase 4: GPIO Control
 - **chardev ioctl:** Pure Rust GPIO control (no DTS required)
@@ -69,11 +73,11 @@
 - **Command Dispatch:** GPIO set/toggle/pulse via Command enum
 - **Status Tracking:** SharedStats tracks GPIO state and publish counts
 
-### Phase 5: Vue.js Frontend
-- **Single-Page App:** Vue.js framework with Tailwind CSS
-- **Pages:** Dashboard, Config, GPIO Control, Status
+### Phase 5: Vanilla JavaScript Frontend
+- **Single-Page App:** Vanilla JavaScript (no framework, no npm)
+- **Pages:** Status, Communication, UART, Network, Routing, System, Help
 - **Real-time Updates:** WebSocket for live stats, UART logs
-- **Session Auth:** Cookie-based auth, 1h expiry (RAM-based)
+- **Session Auth:** Token-based (32 hex chars, max 4 concurrent sessions, 24h TTL)
 
 ### Phase 6: Integration & Testing
 - **Cross-platform Testing:** Deployed and tested on MT7688 (OpenWrt 24.10)
@@ -82,23 +86,48 @@
 - **Config API:** Full CRUD for all settings
 - **UI Auth:** Password protection with session management
 
+### Phase 7: WiFi + Network + System Management (COMPLETE)
+- **WiFi Management:** 4 modes (STA/AP/STA+AP/Off), scan, dynamic mode switching
+- **Network Configuration:** ETH WAN (DHCP/static), WiFi WAN, LAN, metric priority
+- **NTP Synchronization:** Server list, timezone support, manual sync trigger
+- **Static Routing:** Create/delete static routes, dynamic route display
+- **System Maintenance:** Backup/restore UCI config, factory reset, restart
+- **Firmware Upgrade:** Local IPK upload, remote URL with SHA256 verification
+- **Draft/Apply Pattern:** WiFi and network changes saved to RAM, apply commits flash
+- **Embedded SPA:** Vanilla JS with 6 tabs, no external CDN dependencies
+
 ---
 
 ## Architecture & Components
 
-| Component | File | Purpose | Complexity |
-|-----------|------|---------|-----------|
-| HTTP Server | main.rs | Request routing, response handling | Medium |
-| Network Config | network_config.rs | UCI integration, IP validation | High |
-| Network UI | html_network.rs | Form rendering, status display | Medium |
-| UCI Wrapper | uci.rs | CLI command wrapper | Low |
-| System Info | system_info.rs | Stats collection from /proc | Low |
-| Config Manager | config.rs | Thread-safe config storage | Medium |
-| UART Reader | uart_reader.rs | Serial data acquisition | Medium |
-| MQTT Publisher | mqtt_publisher.rs | MQTT client with reconnect | Medium |
-| HTTP Publisher | http_publisher.rs | HTTP POST with retry | Medium |
-| Time Sync | time_sync.rs | NTP synchronization | Low |
-| HTML Templates | html_*.rs | Web UI rendering (3 files) | Low |
+| Component | File | Purpose | LOC | Complexity |
+|-----------|------|---------|-----|-----------|
+| Main Entry | main.rs | Tokio init, task spawning | 270 | Medium |
+| Config Manager | config.rs | UCI config + hot-reload | 486 | High |
+| UART Reader | uart/reader.rs | AsyncFd epoll, frame detection | 233 | Medium |
+| UART Writer | uart/writer.rs | UART TX queue | 73 | Low |
+| Web Server | web/server.rs | tiny-http routing, handlers | 588 | High |
+| WiFi Manager | web/wifi.rs | 4-mode WiFi control, scanning | 209 | Medium |
+| Network Config | web/netcfg.rs | LAN/WAN/NTP/routes (draft/apply) | 350 | High |
+| Auth Manager | web/auth.rs | Session tokens, rate limiting | 141 | Medium |
+| Maintenance | web/maintenance.rs | Backup/restore/upgrade | 362 | Medium |
+| Status Collector | web/status.rs | System stats, channel monitoring | 210 | Low |
+| Syslog Viewer | web/syslog.rs | OpenWrt logging integration | 165 | Low |
+| Toolbox API | web/toolbox.rs | Ping, traceroute, DNS lookup | 135 | Low |
+| WebSocket | web/ws.rs | tungstenite live streaming | 121 | Medium |
+| Web Helpers | web/mod.rs | json_resp, jval, json_escape | 75 | Low |
+| MQTT Publisher | channels/mqtt.rs | std::thread + rumqttc sync | 202 | Medium |
+| HTTP Publisher | channels/http_pub.rs | spawn_blocking + ureq | 139 | Medium |
+| TCP Channel | channels/tcp.rs | Server/client with reconnect | 195 | High |
+| Offline Buffer | channels/buffer.rs | RAM + disk overflow | 222 | High |
+| Reconnect Logic | channels/reconnect.rs | Exponential backoff | 66 | Low |
+| UCI Wrapper | uci.rs | OpenWrt config CLI wrapper | 146 | Low |
+| GPIO Control | gpio.rs | chardev ioctl, LED heartbeat | 171 | Medium |
+| Time Sync | time_sync.rs | HTTP-based NTP | 83 | Low |
+| Commands | commands.rs | Command enum, parsing | 139 | Low |
+| Embedded SPA | embedded_index.html | Vanilla JS UI | 925 | Medium |
+| Asset Pipeline | assets/ | CSS, JS modules, preview | 174 | Low |
+| Modal System | modals/ | Help dialogs, loader | 56 | Low |
 
 ---
 
@@ -255,34 +284,37 @@
 
 ## Development Phases
 
-### Phase 1: Core System (COMPLETE)
-- HTTP server with basic routes
-- System info collection
+### Phase 1: Core System (COMPLETE - Jan 2026)
+- HTTP server with basic routes (tiny-http)
+- System info collection from /proc
 - Configuration management (MQTT/HTTP/UART)
-- UART reader with background thread
-- MQTT and HTTP publishers
+- UART reader with AsyncFd (epoll-based)
+- MQTT and HTTP publishers (std thread + tokio async)
 
-### Phase 2: Web UI (COMPLETE)
-- Dashboard (system stats)
-- Configuration form
+### Phase 2: Web UI (COMPLETE - Jan 2026)
+- Dashboard (system stats, uptime, CPU, RAM)
+- Configuration form (MQTT/HTTP/TCP/UART)
 - Responsive HTML templates
 
 ### Phase 3: Network Management (COMPLETE - Feb 2026)
-- Network configuration module (network_config.rs)
-- Network UI page (html_network.rs)
-- UCI wrapper (uci.rs)
-- IP/netmask validation functions
-- LAN conflict detection
-- Gateway subnet checking
-- /network and /api/network endpoints
+- Network configuration (LAN/WAN IP, DHCP/static)
+- UCI wrapper (uci.rs) for /etc/config/network
+- IP/netmask/gateway validation
+- Interface restart without full reboot
 
-### Phase 4: Advanced Features (PLANNED)
-- Multi-interface support (LAN + WAN)
-- Firewall rule configuration
-- Static routes
-- VLAN tagging
-- Performance optimization
-- OTA firmware updates
+### Phase 4-6: Advanced Features (COMPLETE - Feb 2026)
+- TCP server + client with bi-directional data
+- GPIO control via chardev ioctl
+- WebSocket real-time logs and stats
+- Offline buffering (RAM + disk)
+- Session authentication (token-based, 24h TTL)
+
+### Phase 7: WiFi + Network + System (COMPLETE - Mar 2026)
+- **WiFi:** STA/AP/STA+AP/Off modes, scan, status, mode switching
+- **Network:** Dynamic WAN discovery, metric priority, NTP servers, static routes
+- **System:** Backup/restore, factory reset, version/build info, firmware upgrade
+- **Draft/Apply:** UCI changes staged in RAM, apply commits flash + restarts services
+- **Frontend:** 6 tabs (Status, Communication, UART, Network, Routing, System)
 
 ---
 
@@ -496,6 +528,8 @@ ssh root@10.10.10.1 'curl http://localhost:8888/'
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.0 | 2026-03-08 | Phase 7 complete: WiFi management (4 modes), network config (WAN/NTP/routing), system maintenance (backup/upgrade), draft/apply pattern |
+| 2.0 | 2026-02-26 | Phase 1-6 complete: Core system, UART/MQTT/HTTP/TCP channels, GPIO, WebSocket, session auth |
 | 1.0 | 2026-02-12 | Initial release with Phase 3 (Network Config) complete |
 
 ---

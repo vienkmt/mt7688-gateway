@@ -4,82 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>uGate - From UART to the world</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
-.app{max-width:1000px;margin:0 auto;padding:16px}
-header{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #334155;margin-bottom:16px}
-header h1{font-size:1.2rem;color:#38bdf8}
-header .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
-header .dot.on{background:#22c55e}
-header .dot.off{background:#ef4444}
-nav{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
-nav button{padding:6px 14px;border:1px solid #334155;background:#1e293b;color:#94a3b8;border-radius:6px;cursor:pointer;font-size:.8rem}
-nav button.active{background:#334155;color:#f1f5f9;border-color:#475569}
-.card{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:16px;margin-bottom:12px}
-.card h3{font-size:.9rem;color:#94a3b8;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}
-@media(max-width:520px){.grid{grid-template-columns:1fr}}
-.grid div{display:flex;gap:8px;padding:4px 0}
-.grid label{color:#64748b;font-size:.85rem}
-.grid span{color:#e2e8f0;font-size:.85rem;font-weight:500}
-.gpio-btns{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.gpio-btn{padding:12px;border:2px solid #334155;border-radius:8px;cursor:pointer;text-align:center;font-weight:600;transition:all .15s}
-.gpio-btn.on{background:#166534;border-color:#22c55e;color:#22c55e}
-.gpio-btn.off{background:#1e293b;border-color:#475569;color:#94a3b8}
-.login{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px}
-.login input{padding:10px 16px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;border-radius:6px;width:240px;font-size:1rem}
-.login button{padding:10px 32px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-size:1rem}
-.login .error{color:#ef4444;font-size:.85rem}
-.cf{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:10px 32px;align-items:center;font-size:.85rem;color:#94a3b8}
-@media(max-width:520px){.cf{grid-template-columns:auto 1fr;gap:8px 12px}.cf .full{grid-column:1/-1}}
-.cf .full{grid-column:2/5}
-.cf .lbl{white-space:nowrap;min-width:80px;color:#64748b}
-.cf>span{color:#e2e8f0;font-weight:500}
-.cf .gap{grid-column:1/-1;height:0;border-top:1px solid #334155;margin:2px 0}
-.cf input[type=text],.cf input[type=number],.cf input[type=password],.cf select{padding:6px 10px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:4px;font-size:.85rem;width:100%}
-.cf .sw-wrap{display:flex;align-items:center;justify-content:flex-end}
-.save-btn{padding:10px 32px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:.9rem;display:block;margin:8px auto 0}
-.stream{background:#0f172a;border:1px solid #334155;border-radius:4px;padding:8px;flex:1;min-height:0;overflow-y:auto;font-family:monospace;font-size:.75rem;color:#94a3b8}
-.stream div{padding:2px 0;border-bottom:1px solid #1e293b}
-/* iOS-style switch */
-.sw{position:relative;width:44px;height:24px;flex-shrink:0}
-.sw input{opacity:0;width:0;height:0}
-.sw .sl{position:absolute;cursor:pointer;inset:0;background:#475569;border-radius:12px;transition:.2s}
-.sw .sl:before{content:'';position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s}
-.sw input:checked+.sl{background:#22c55e}
-.sw input:checked+.sl:before{transform:translateX(20px)}
-/* Progress bar */
-.pbar{height:8px;background:#334155;border-radius:4px;overflow:hidden;flex:1;margin-left:8px}
-.pbar .fill{height:100%;border-radius:4px;transition:width .6s cubic-bezier(.4,0,.2,1)}
-.pbar-row{display:flex;align-items:center;gap:8px;padding:4px 0}
-.pbar-row label{color:#64748b;font-size:.85rem;min-width:60px}
-.pbar-row span{color:#e2e8f0;font-size:.85rem;font-weight:500;min-width:72px;text-align:right}
-/* Toast */
-.toast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:16px 40px;border-radius:10px;font-size:1.1rem;font-weight:600;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;text-align:center;min-width:200px}
-.toast.show{opacity:1}
-.toast.ok{background:#166534;color:#22c55e;border:2px solid #22c55e}
-.toast.err{background:#7f1d1d;color:#ef4444;border:2px solid #ef4444}
-/* Modal */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:900;display:flex;align-items:center;justify-content:center;animation:fadeIn .2s}
-.modal{background:#1e293b;border:1px solid #475569;border-radius:12px;padding:20px;width:90%;max-width:400px;max-height:70vh;overflow-y:auto;animation:slideUp .25s}
-.modal h3{color:#38bdf8;margin-bottom:12px;font-size:1rem}
-.modal-close{position:absolute;top:12px;right:16px;background:none;border:none;color:#94a3b8;font-size:1.2rem;cursor:pointer}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
-@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
-.wifi-item{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #334155;cursor:pointer;border-radius:6px;transition:background .15s}
-.wifi-item:hover{background:#334155}
-.wifi-signal{display:flex;align-items:flex-end;gap:2px;margin-right:8px}
-.wifi-signal i{width:3px;background:#475569;border-radius:1px}
-.wifi-signal i.active{background:#22c55e}
-.spinner{width:24px;height:24px;border:3px solid #334155;border-top:3px solid #38bdf8;border-radius:50%;animation:spin .8s linear infinite;margin:20px auto}
-@keyframes spin{to{transform:rotate(360deg)}}
-/* Channel badge */
-.ch-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.7rem;font-weight:600;text-transform:uppercase}
-.ch-badge.connected{background:#166534;color:#22c55e}
-.ch-badge.disconnected{background:#7f1d1d;color:#ef4444}
-.ch-badge.disabled{background:#334155;color:#64748b}
-</style>
+<link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <div id="app" class="app"></div>
@@ -103,7 +28,7 @@ function render(){
   root.append(
     h('header',{},h('h1',{},'uGate - From UART to the world'),h('span',{},h('span',{cls:'dot '+(S.connected?'on':'off')}),'WS')),
     renderNav(),
-    pg==='status'?renderStatus():pg==='config'?renderConfig():pg==='network'?renderNetwork():pg==='routing'?renderRouting():pg==='uart'?renderUart():pg==='system'?renderSystem():h('div',{})
+    pg==='status'?renderStatus():pg==='config'?renderConfig():pg==='network'?renderNetwork():pg==='routing'?renderRouting():pg==='toolbox'?renderToolbox():pg==='uart'?renderUart():pg==='system'?renderSystem():h('div',{})
   );
 }
 function renderLogin(root){
@@ -120,7 +45,7 @@ async function doLogin(){
   else{S.loginErr='Sai mật khẩu';render()}
 }
 function renderNav(){
-  const tabs=[['status','Trạng thái'],['config','Truyền thông'],['uart','UART'],['network','Mạng'],['routing','Định tuyến'],['system','Hệ thống']];
+  const tabs=[['status','Status'],['config','Channels'],['uart','UART'],['network','Network'],['routing','Routing'],['toolbox','Toolbox'],['system','System']];
   return h('nav',{},...tabs.map(([id,label])=>h('button',{cls:S.page===id?'active':'',onclick:()=>{S.page=id;render()}},label)));
 }
 // --- Status page ---
@@ -158,7 +83,7 @@ function renderWifiStatus(){
   if(ws.mode!=='ap'){
     const staVal=sta.connected
       ?h('span',{style:'display:flex;align-items:center;gap:6px;color:#22c55e'},signalBars(sta.signal),sta.ssid||sta.config_ssid,' ',sta.signal+' dBm')
-      :h('span',{style:'color:#ef4444'},'Ngắt');
+      :h('span',{style:'color:#ef4444'},sta.config_ssid?'Ngắt — "'+sta.config_ssid+'"':'Chưa cấu hình');
     items.push(lbl('STA'),staVal);
     if(sta.connected)items.push(lbl('IP'),h('span',{},sta.ip||'-'));
   }
@@ -177,25 +102,25 @@ function renderStatus(){
   }
   return h('div',{},
     h('div',{cls:'card'},h('h3',{},'Hệ thống'),
-      h('div',{style:'display:grid;grid-template-columns:auto 1fr auto 1fr auto 1fr;gap:8px 16px;align-items:center;font-size:.85rem'},
-        h('span',{style:'color:#64748b;white-space:nowrap'},'Phiên bản'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'ver'},s.version||'-'),
-        h('span',{style:'color:#64748b;white-space:nowrap'},'Uptime'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'up'},s.uptime||'-'),
-        h('span',{style:'color:#64748b;white-space:nowrap'},'Thời gian'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'dt'},s.datetime||'-')
+      h('div',{cls:'sys-info cf',style:'grid-template-columns:auto 1fr auto 1fr auto 1fr'},
+        lbl('Phiên bản'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'ver'},s.version||'-'),
+        lbl('Uptime'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'up'},s.uptime||'-'),
+        lbl('Thời gian'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'dt'},s.datetime||'-')
       ),
       pbar('cpu','CPU',cpu,100,cpu>80?'#ef4444':cpu>50?'#f59e0b':'#22c55e',cpu+'%'),
       pbar('ram','RAM',ru,rt,ru/rt>0.8?'#ef4444':ru/rt>0.5?'#f59e0b':'#22c55e',ru+'/'+rt+' MB')
     ),
     h('div',{cls:'card'},
       h('h3',{},'Kênh truyền',
-        h('div',{style:'display:flex;gap:6px;flex-wrap:wrap'},
-          h('span',{style:'font-size:.7rem;color:#64748b'},'MQTT:'),badge('mqtt',m.state,m.enabled),
-          h('span',{style:'font-size:.7rem;color:#64748b;margin-left:6px'},'HTTP:'),badge('http',hp.state,hp.enabled),
-          h('span',{style:'font-size:.7rem;color:#64748b;margin-left:6px'},'TCP:'),badge('tcp',t.state,t.enabled)
+        h('div',{cls:'ch-badges',style:'display:flex;gap:6px;flex-wrap:wrap'},
+          h('span',{cls:'ch-lbl',style:'font-size:.7rem;color:#64748b'},'MQTT:'),badge('mqtt',m.state,m.enabled),
+          h('span',{cls:'ch-lbl',style:'font-size:.7rem;color:#64748b;margin-left:6px'},'HTTP:'),badge('http',hp.state,hp.enabled),
+          h('span',{cls:'ch-lbl',style:'font-size:.7rem;color:#64748b;margin-left:6px'},'TCP:'),badge('tcp',t.state,t.enabled)
         )
       ),
-      h('div',{style:'display:grid;grid-template-columns:auto 1fr auto 1fr auto 1fr;gap:8px 16px;align-items:center;font-size:.85rem;color:#94a3b8'},
-        lbl('UART RX'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'urx'},''+(u.rx_frames??0)+' frames / '+(u.rx_bytes??0)+' B'),
-        lbl('UART TX'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'utx'},''+(u.tx_frames??0)+' frames / '+(u.tx_bytes??0)+' B'),
+      h('div',{cls:'cf'},
+        lbl('UART RX'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'urx'},''+(u.rx_frames??0)+' fr / '+(u.rx_bytes??0)+' B'),
+        lbl('UART TX'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'utx'},''+(u.tx_frames??0)+' fr / '+(u.tx_bytes??0)+' B'),
         lbl('UART config'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'ucfg'},u.config||'-'),
         lbl('MQTT pub'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'mpub'},''+(m.published??0)+' ok / '+(m.failed??0)+' fail'),
         lbl('HTTP sent'),h('span',{style:'color:#e2e8f0;font-weight:500','data-f':'hsnt'},''+(hp.sent??0)+' ok / '+(hp.failed??0)+' fail'),
@@ -233,17 +158,18 @@ function updateStatus(){
   });
   // Update badges
   ['mqtt','http','tcp'].forEach(ch=>{
-    const badge=document.querySelector('[data-badge="'+ch+'"]');
-    if(!badge)return;
+    const el=document.querySelector('[data-badge="'+ch+'"]');
+    if(!el)return;
     const obj=ch==='mqtt'?m:ch==='http'?hp:t;
     const st=obj.state;const en=obj.enabled;
-    badge.className='ch-badge '+(en===false||st==='disabled'?'disabled':st==='connected'?'connected':'disconnected');
-    badge.textContent=en===false?'off':st||'disconnected';
+    el.className='ch-badge '+(en===false||st==='disabled'?'disabled':st==='connected'?'connected':'disconnected');
+    el.textContent=en===false?'off':st||'disconnected';
   });
 }
 // --- Config helpers (4-column grid) ---
 function lbl(text){return h('span',{cls:'lbl'},text)}
 function gap(){return h('div',{cls:'gap'})}
+function helpLink(text,fn){return h('a',{href:'#',cls:'help-link',onclick:e=>{e.preventDefault();fn()}},text)}
 function inp(type,obj,key,full){
   return h('input',{type,cls:full?'full':'',value:type==='number'?(obj[key]||0):(obj[key]||''),oninput:e=>{obj[key]=type==='number'?+e.target.value:e.target.value}});
 }
@@ -264,24 +190,23 @@ function renderConfig(){
   if(!S.config){loadConfig();return h('div',{cls:'card'},'Đang tải...')}
   const c=S.config;
   // General
-  const general=h('div',{cls:'card'},h('h3',{},'General'),
-    h('div',{cls:'cf'},lbl('Tên thiết bị'),inp('text',c.general,'device_name',true)));
+  const general=h('div',{cls:'card'},h('h3',{style:'display:flex;align-items:center;gap:8px'},'General',helpLink('Help',()=>showDataWrapHelp())),
+    h('div',{cls:'cf cf-3'},
+      lbl('Tên thiết bị'),inp('text',c.general,'device_name'),
+      lbl('Data Wrap'),h('label',{cls:'chk'},h('input',{type:'checkbox',...(c.general.wrap_json?{checked:''}:{}),onchange:e=>{c.general.wrap_json=e.target.checked;if(e.target.checked)showDataWrapHelp();render()}}),h('span',{cls:'chk-box'}),h('span',{style:'color:#e2e8f0;font-size:.85rem'},c.general.wrap_json?'Bật':'Tắt')),
+      lbl('Text encoding'),h('label',{cls:'chk'},h('input',{type:'checkbox',...(c.general.data_as_text?{checked:''}:{}),onchange:e=>{c.general.data_as_text=e.target.checked;render()}}),h('span',{cls:'chk-box'}),h('span',{style:'color:#e2e8f0;font-size:.85rem'},c.general.data_as_text?'Text':'Hex'))
+    ));
   // MQTT
   const mqtt=h('div',{cls:'card'},chHdr('MQTT',c.mqtt),
-    ...(c.mqtt.enabled?[h('div',{cls:'cf'},
-      lbl('Broker'),inp('text',c.mqtt,'broker',true),
-      lbl('Port'),inp('number',c.mqtt,'port'),
-      h('div',{cls:'sw-wrap',style:'grid-column:3/5'},h('span',{cls:'lbl',style:'margin-right:8px;min-width:auto'},'TLS'),swTog(c.mqtt,'tls')),
-      lbl('Client ID'),inp('text',c.mqtt,'client_id'),lbl('QoS'),slct(c.mqtt,'qos',[['0','0'],['1','1'],['2','2']]),
-      lbl('Username'),inp('text',c.mqtt,'username'),lbl('Mật khẩu'),inp('password',c.mqtt,'password'),
-      gap(),
-      lbl('Publish Topic'),inp('text',c.mqtt,'topic'),
-      lbl('Subscribe Topic'),inp('text',c.mqtt,'sub_topic')
+    ...(c.mqtt.enabled?[h('div',{cls:'cf cf-3'},
+      lbl('Broker'),inp('text',c.mqtt,'broker'),lbl('Port'),inp('number',c.mqtt,'port'),lbl('TLS'),h('label',{cls:'chk'},h('input',{type:'checkbox',...(c.mqtt.tls?{checked:''}:{}),onchange:e=>{c.mqtt.tls=e.target.checked}}),h('span',{cls:'chk-box'}),h('span',{style:'color:#e2e8f0;font-size:.85rem'},c.mqtt.tls?'Bật':'Tắt')),
+      lbl('Client ID'),h('input',{type:'text',value:S.status.mqtt?S.status.mqtt.client_id||'':'',readonly:'',cls:'inp',style:'opacity:.6;cursor:default',placeholder:'Chưa kết nối',title:'Tự sinh ngẫu nhiên mỗi lần kết nối'}),lbl('Username'),inp('text',c.mqtt,'username'),lbl('Mật khẩu'),inp('password',c.mqtt,'password'),
+      lbl('QoS'),slct(c.mqtt,'qos',[['0','0'],['1','1'],['2','2']]),lbl('Pub Topic'),inp('text',c.mqtt,'topic'),lbl('Sub Topic'),inp('text',c.mqtt,'sub_topic')
     )]:[])
   );
   // HTTP
   const http=h('div',{cls:'card'},chHdr('HTTP',c.http),
-    ...(c.http.enabled?[h('div',{cls:'cf'},
+    ...(c.http.enabled?[h('div',{cls:'cf',style:'grid-template-columns:auto 1fr auto 2fr'},
       lbl('Phương thức'),slct(c.http,'method',[['post','POST'],['get','GET']]),
       lbl('URL'),inp('text',c.http,'url')
     )]:[])
@@ -308,8 +233,12 @@ function renderUart(){
   if(fm==='none')fields.push(lbl('Gap (ms)'),inp('number',c.uart,'gap_ms'));
   if(fm==='frame'){fields.push(lbl('Frame Length'),inp('number',c.uart,'frame_length'),lbl('Frame Timeout (ms)'),inp('number',c.uart,'frame_timeout_ms'))}
   if(fm==='modbus')fields.push(lbl('Frame Timeout (ms)'),inp('number',c.uart,'frame_timeout_ms'));
+  if(S._uartOpen==null)S._uartOpen=true;
+  const arrow=h('span',{cls:'arrow'+(S._uartOpen?' open':''),style:'transition:transform .2s;display:inline-block;'+(S._uartOpen?'transform:rotate(90deg)':'')},'\u25B6');
+  const togBtn=h('button',{cls:'collapse-btn',onclick:()=>{S._uartOpen=!S._uartOpen;render()}},arrow);
+  const body=S._uartOpen?h('div',{},h('div',{cls:'cf'},...fields),h('button',{cls:'save-btn',onclick:saveConfig},'Lưu cấu hình')):h('div',{});
   return h('div',{style:'display:flex;flex-direction:column;height:calc(100vh - 120px)'},
-    h('div',{cls:'card',style:'flex-shrink:0'},h('h3',{},'Cài đặt UART'),h('div',{cls:'cf'},...fields),h('button',{cls:'save-btn',onclick:saveConfig},'Lưu cấu hình')),
+    h('div',{cls:'card',style:'flex-shrink:0'},h('h3',{},'Cài đặt UART',togBtn),body),
     renderData());
 }
 async function loadConfig(){
@@ -339,11 +268,12 @@ function fmtRow(d){
       content=bytes.map(b=>{const c=parseInt(b,16);return c>=32&&c<127?String.fromCharCode(c):c===10?'':c===13?'':''}).join('');
     }
   }
+  const errTag=d.err?h('span',{style:'color:#ef4444;font-size:.75rem;margin-left:4px'},'('+d.err+')'):'';
   const row=h('div',{style:'display:flex;gap:8px;padding:1px 0;border-bottom:1px solid #1e293b'},
     h('span',{style:'color:#64748b;min-width:64px'},d._ts||''),
     h('span',{style:'color:'+(isRx?'#22c55e':'#f59e0b')+';font-weight:600;min-width:20px'},isRx?'RX':'TX'),
     h('span',{style:'color:#38bdf8;min-width:28px'},'['+d.len+']'),
-    h('span',{},content)
+    h('span',{},content,errTag)
   );
   return row;
 }
@@ -363,14 +293,17 @@ function renderData(){
   _streamEl=h('div',{cls:'stream',style:'flex:1;overflow-y:auto;min-height:0'});
   S.stream.forEach((d,i)=>{const r=fmtRow(d);if(r)_streamEl.append(r);_rendered=i+1});
   setTimeout(()=>{if(_streamEl)_streamEl.scrollTop=_streamEl.scrollHeight},10);
-  const toolbar=h('div',{style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'},
-    h('h3',{style:'margin:0;font-size:.9rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em'},'UART Real-time'),
-    h('div',{style:'display:flex;align-items:center;gap:12px'},
-      h('label',{style:'font-size:.8rem;color:#94a3b8;display:flex;align-items:center;gap:6px'},
-        'HEX',h('label',{cls:'sw'},h('input',{type:'checkbox',...(!S.hexView?{checked:''}:{}),onchange:e=>{S.hexView=!e.target.checked;_streamEl=null;_rendered=0;render()}}),h('span',{cls:'sl'})),'TEXT'
-      ),
-      h('button',{style:'padding:4px 12px;background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:4px;cursor:pointer;font-size:.75rem',onclick:()=>{S.stream=[];_streamEl=null;_rendered=0;render()}},'Xoá')
-    )
+  const txInput=h('input',{type:'text',placeholder:'Gửi serial...',style:'flex:1;padding:2px 6px;background:transparent;color:#e2e8f0;border:none;outline:none;font-size:.8rem;font-family:monospace;min-width:0'});
+  const sendTx=()=>{const v=txInput.value.trim();if(!v)return;fetch('/api/uart/tx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:v})});txInput.value='';};
+  txInput.addEventListener('keydown',e=>{if(e.key==='Enter')sendTx()});
+  const toolbar=h('div',{style:'display:flex;align-items:center;gap:40px;margin-bottom:8px'},
+    h('h3',{style:'margin:0;font-size:.9rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap'},'UART Real-time'),
+    h('div',{style:'display:flex;align-items:center;gap:6px;flex:1;min-width:0;background:#1e293b;border:1px solid #334155;border-radius:6px;padding:3px 4px'},
+      txInput,
+      h('button',{style:'padding:3px 12px;background:#2563eb;color:white;border:none;border-radius:4px;cursor:pointer;font-size:.78rem;font-weight:600;white-space:nowrap',onclick:sendTx},'Gửi')
+    ),
+    h('label',{cls:'chk',style:'font-size:.78rem'},h('input',{type:'checkbox',...(S.hexView?{checked:''}:{}),onchange:e=>{S.hexView=e.target.checked;_streamEl=null;_rendered=0;render()}}),h('span',{cls:'chk-box'}),h('span',{style:'color:#94a3b8'},'HEX')),
+    h('button',{style:'padding:3px 10px;background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:4px;cursor:pointer;font-size:.75rem',onclick:()=>{S.stream=[];_streamEl=null;_rendered=0;render()}},'Xoá')
   );
   return h('div',{cls:'card',style:'flex:1;display:flex;flex-direction:column;padding-bottom:8px;min-height:0;overflow:hidden'},toolbar,_streamEl);
 }
@@ -378,9 +311,9 @@ function renderData(){
 function renderNetwork(){
   if(!S.wifi.status)loadWifiStatus().then(render);
   checkPendingChanges();
-  const banner=S.pendingChanges?h('div',{style:'background:#92400e;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center'},
+  const banner=S.pendingChanges?h('div',{cls:'pending-banner',style:'background:#92400e;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center'},
     h('span',{style:'color:#fbbf24;font-weight:600;font-size:.85rem'},'⚠ Có thay đổi chưa lưu vào flash'),
-    h('div',{style:'display:flex;gap:8px'},
+    h('div',{cls:'pending-btns',style:'display:flex;gap:8px'},
       h('button',{style:'padding:6px 16px;background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:6px;cursor:pointer;font-size:.8rem',onclick:revertChanges},'Huỷ nháp'),
       h('button',{style:'padding:6px 16px;background:#16a34a;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:.8rem',onclick:applyChanges},'Áp dụng & Lưu flash')
     )
@@ -389,9 +322,9 @@ function renderNetwork(){
 }
 function renderRouting(){
   checkPendingChanges();
-  const banner=S.pendingChanges?h('div',{style:'background:#92400e;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center'},
+  const banner=S.pendingChanges?h('div',{cls:'pending-banner',style:'background:#92400e;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center'},
     h('span',{style:'color:#fbbf24;font-weight:600;font-size:.85rem'},'⚠ Có thay đổi chưa lưu vào flash'),
-    h('div',{style:'display:flex;gap:8px'},
+    h('div',{cls:'pending-btns',style:'display:flex;gap:8px'},
       h('button',{style:'padding:6px 16px;background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:6px;cursor:pointer;font-size:.8rem',onclick:revertChanges},'Huỷ nháp'),
       h('button',{style:'padding:6px 16px;background:#16a34a;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:.8rem',onclick:applyChanges},'Áp dụng & Lưu flash')
     )
@@ -425,14 +358,15 @@ function renderWifi(){
   };
   const staSection=(w._mode==='sta'||w._mode==='sta_ap')?h('div',{style:secStyle},
     h('div',{style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px'},
-      h('div',{style:'font-weight:600;color:#38bdf8;font-size:.85rem'},'STA — Kết nối WiFi'),
-      h('button',{cls:'save-btn',style:'margin:0;padding:4px 12px;font-size:.75rem;background:#334155',onclick:scanWifi},'Quét WiFi')
+      h('div',{style:'font-weight:600;color:#38bdf8;font-size:.85rem;white-space:nowrap'},'STA — Kết nối WiFi'),
+      h('button',{cls:'scan-btn',style:'margin:0;padding:3px 8px;font-size:.7rem;background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:4px;cursor:pointer;white-space:nowrap;flex-shrink:0',onclick:scanWifi},'Quét')
     ),
     sta.connected?h('div',{cls:'cf',style:'margin-bottom:8px'},
       lbl('Trạng thái'),h('span',{style:'color:#22c55e'},'Đã kết nối'),
       lbl('Tín hiệu'),h('span',{style:'display:flex;align-items:center;gap:6px'},signalBars(sta.signal),sta.signal+' dBm'),
       lbl('IP'),h('span',{},sta.ip||'-')
-    ):h('div',{}),
+    ):h('div',{style:'margin-bottom:8px;padding:6px 10px;background:#7f1d1d22;border:1px solid #7f1d1d;border-radius:6px;font-size:.8rem;color:#fca5a5'},
+      sta.config_ssid?'Không kết nối được "'+sta.config_ssid+'" — kiểm tra SSID/mật khẩu hoặc router':'Chưa cấu hình WiFi'),
     h('div',{cls:'cf'},
       lbl('SSID'),h('input',{type:'text',id:'sta-ssid',value:w._staSsid,placeholder:'Nhập hoặc quét WiFi',oninput:e=>{w._staSsid=e.target.value}}),
       lbl('Mật khẩu'),pwdInput(w._staPwd,v=>{w._staPwd=v},'Để trống nếu không cần')
@@ -537,7 +471,7 @@ function renderNtp(){
   addRm.append(h('button',{style:'padding:3px 10px;background:#1e3a5f;color:#93c5fd;border:1px solid #334155;border-radius:4px;cursor:pointer;font-size:.75rem',onclick:()=>{n._srvs.push('');render()}},'+ Thêm'));
   if(n._srvs.length>1)addRm.append(h('button',{style:'padding:3px 10px;background:#991b1b;color:#fca5a5;border:none;border-radius:4px;cursor:pointer;font-size:.75rem',onclick:()=>{n._srvs.pop();render()}},'- Xoá cuối'));
   fields.push(addRm);
-  const btns=h('div',{style:'display:flex;gap:8px;justify-content:center;margin-top:8px'});
+  const btns=h('div',{cls:'ntp-btns',style:'display:flex;gap:8px;justify-content:center;margin-top:8px'});
   btns.append(h('button',{cls:'save-btn',style:'margin:0;background:#334155',onclick:syncNtp},'Đồng bộ ngay'));
   btns.append(h('button',{cls:'save-btn',style:'margin:0',onclick:saveNtp},'Lưu NTP'));
   return h('div',{cls:'card'},hdr,h('div',{cls:'cf'},...fields),btns);
@@ -639,8 +573,9 @@ function renderRoutes(){
     h('td',{style:'padding:6px 8px;font-size:.8rem;color:#94a3b8;text-align:center'},rt.metric),
     h('td',{style:'padding:6px 8px;font-size:.8rem;color:#64748b'},rt.scope)
   ));
-  const table=routes.length?h('table',{style:'width:100%;border-collapse:collapse;margin-bottom:12px'},h('thead',{},thead),h('tbody',{},...tbody))
+  const tableEl=routes.length?h('table',{style:'width:100%;border-collapse:collapse;margin-bottom:12px'},h('thead',{},thead),h('tbody',{},...tbody))
     :h('div',{style:'color:#64748b;font-size:.85rem;margin-bottom:12px'},'Chưa có route nào');
+  const table=routes.length?h('div',{cls:'route-wrap'},tableEl):tableEl;
   // Add route form
   return h('div',{cls:'card'},h('h3',{},'Routing'),
     h('div',{style:'font-weight:600;color:#38bdf8;margin-bottom:6px;font-size:.85rem'},'Bảng định tuyến'),table,
@@ -774,12 +709,12 @@ function renderSystem(){
     }
   }
   const firmware=h('div',{cls:'card'},h('h3',{},'Firmware'),
-    h('div',{style:'display:flex;gap:20px;align-items:center;margin-bottom:8px'},
+    h('div',{cls:'fw-meta',style:'display:flex;gap:20px;align-items:center;margin-bottom:8px'},
       h('span',{style:'font-size:.85rem'},h('span',{style:'color:#64748b'},'Phiên bản: '),h('span',{style:'color:#e2e8f0'},'v'+(v.version||'-'))),
       h('span',{style:'font-size:.85rem'},h('span',{style:'color:#64748b'},'Build: '),h('span',{style:'color:#e2e8f0'},v.build_date||'-')),
       h('span',{style:'font-size:.85rem'},h('span',{style:'color:#64748b'},'Commit: '),h('span',{style:'font-family:monospace;color:#e2e8f0'},v.git_commit||'-'))
     ),
-    (()=>{const inp=h('input',{type:'text',value:S.sys.upgradeUrl,placeholder:'https://example.com/ugate/latest.json',style:'flex:1;padding:6px;background:#0f172a;border:1px solid #334155;border-radius:4px;color:#e2e8f0;font-size:.85rem'});return h('div',{style:'display:flex;gap:8px;align-items:center;margin-top:10px'},lbl('URL cập nhật'),inp,h('div',{style:'display:flex;gap:6px'},h('button',{cls:'save-btn',style:'margin:0;min-width:80px;white-space:nowrap',onclick:()=>saveUpgradeUrl(inp)},'Lưu'),h('button',{cls:'save-btn',style:'margin:0;min-width:140px;background:#334155;white-space:nowrap',onclick:checkUpgrade},'Kiểm tra cập nhật')))})(),
+    (()=>{const inp=h('input',{type:'text',value:S.sys.upgradeUrl,placeholder:'https://example.com/ugate/latest.json',style:'flex:1;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:.85rem'});return h('div',{cls:'fw-url-row',style:'display:flex;gap:8px;align-items:center;margin-top:10px'},h('span',{style:'color:#64748b;font-size:.85rem;white-space:nowrap'},'URL cập nhật'),inp,h('div',{cls:'fw-url-btns',style:'display:flex;gap:6px'},h('button',{cls:'save-btn',style:'margin:0;min-width:80px;white-space:nowrap',onclick:()=>saveUpgradeUrl(inp)},'Lưu'),h('button',{cls:'save-btn',style:'margin:0;min-width:140px;background:#334155;white-space:nowrap',onclick:checkUpgrade},'Kiểm tra cập nhật')))})(),
     ...updateSection
   );
   // Section 2: Upload IPK
@@ -788,7 +723,7 @@ function renderSystem(){
   const ipkChooseBtn=h('button',{cls:'save-btn',style:'margin:0;background:#334155;white-space:nowrap',onclick:()=>ipkFile.click()},'Chọn file');
   ipkFile.onchange=()=>{ipkLabel.textContent=ipkFile.files[0]?.name||'Chưa chọn file';};
   const uploadIpk=h('div',{cls:'card'},h('h3',{},'Nâng cấp IPK'),
-    h('div',{style:'display:flex;gap:8px;align-items:center'},
+    h('div',{cls:'ipk-row',style:'display:flex;gap:8px;align-items:center'},
       ipkFile,ipkChooseBtn,ipkLabel,
       h('button',{cls:'save-btn',style:'margin:0;white-space:nowrap',onclick:()=>doUploadIpk(ipkFile)},'Nâng cấp')
     )
@@ -799,9 +734,9 @@ function renderSystem(){
   const restoreChooseBtn=h('button',{cls:'save-btn',style:'margin:0;background:#334155;white-space:nowrap',onclick:()=>restoreFile.click()},'Chọn file');
   restoreFile.onchange=()=>{restoreLabel.textContent=restoreFile.files[0]?.name||'Chưa chọn file';};
   const backupRestore=h('div',{cls:'card'},h('h3',{},'Sao lưu / Khôi phục'),
-    h('div',{style:'display:grid;grid-template-columns:1fr 1fr;gap:10px'},
+    h('div',{cls:'bkrs-grid',style:'display:grid;grid-template-columns:1fr 1fr;gap:10px'},
       h('button',{cls:'save-btn',style:'margin:0;white-space:nowrap;justify-self:start',onclick:()=>{window.location.href='/api/backup'}},'Tải backup'),
-      h('div',{style:'display:flex;gap:8px;align-items:center'},
+      h('div',{cls:'bkrs-row',style:'display:flex;gap:8px;align-items:center'},
         restoreFile,restoreChooseBtn,restoreLabel,
         h('button',{cls:'save-btn',style:'margin:0;white-space:nowrap',onclick:()=>doRestore(restoreFile)},'Khôi phục')
       )
@@ -809,18 +744,18 @@ function renderSystem(){
   );
   // Section 4: System actions
   const actions=h('div',{cls:'card'},h('h3',{},'Hành động hệ thống'),
-    h('div',{style:'display:flex;gap:10px;flex-wrap:wrap;justify-content:center'},
+    h('div',{cls:'act-btns',style:'display:flex;gap:10px;flex-wrap:wrap;justify-content:center'},
       h('button',{cls:'save-btn',style:'margin:0;min-width:160px;background:#b45309',onclick:doRestart},'Khởi động lại'),
       h('button',{cls:'save-btn',style:'margin:0;min-width:160px;background:#991b1b',onclick:doFactoryReset},'Khôi phục mặc định')
     )
   );
   // Section 5: Change password
-  const inputSt='flex:1;padding:6px;background:#0f172a;border:1px solid #334155;border-radius:4px;color:#e2e8f0;font-size:.85rem';
+  const inputSt='flex:1;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:.85rem';
   const oldPw=h('input',{type:'password',placeholder:'Mật khẩu hiện tại',style:inputSt});
   const newPw=h('input',{type:'password',placeholder:'Mật khẩu mới (tối thiểu 4 ký tự)',style:inputSt});
   const confirmPw=h('input',{type:'password',placeholder:'Nhập lại mật khẩu mới',style:inputSt});
   const pwCard=h('div',{cls:'card'},h('h3',{},'Đổi mật khẩu'),
-    h('div',{style:'display:flex;gap:8px;align-items:center'},
+    h('div',{cls:'pw-row',style:'display:flex;gap:8px;align-items:center'},
       oldPw,newPw,confirmPw,
       h('button',{cls:'save-btn',style:'margin:0;white-space:nowrap',onclick:async()=>{
         if(!newPw.value||newPw.value.length<4){toast('Mật khẩu tối thiểu 4 ký tự','err');return}
@@ -832,6 +767,109 @@ function renderSystem(){
   );
   return h('div',{},firmware,uploadIpk,backupRestore,pwCard,actions);
 }
+// --- Toolbox page ---
+let _tbEl=null,_tbR=0;
+function renderToolbox(){
+  if(!S.toolbox)S.toolbox={tool:'ping',target:'',lines:[],running:false};
+  const tb=S.toolbox;
+  const sel=h('select',{style:'padding:8px 12px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:6px;font-size:.85rem',
+    onchange:e=>{tb.tool=e.target.value}},
+    ...['ping','traceroute','nslookup'].map(t=>h('option',{value:t,...(tb.tool===t?{selected:''}:{})},t)));
+  const ti=h('input',{type:'text',value:tb.target,placeholder:'hostname or IP',
+    style:'flex:1;padding:8px 12px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:6px;font-size:.85rem',
+    oninput:e=>{tb.target=e.target.value},onkeydown:e=>{if(e.key==='Enter'&&!tb.running)tbRun()}});
+  const run=h('button',{cls:'save-btn',style:'margin:0;padding:6px 16px;font-size:.8rem;'+(tb.running?'opacity:.5':''),
+    onclick:()=>{if(!tb.running)tbRun()}},tb.running?'Running...':'Run');
+  const stop=tb.running?h('button',{style:'padding:6px 16px;background:#dc2626;color:white;border:none;border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:700',
+    onclick:tbStop},'Stop'):null;
+  const clr=h('button',{style:'padding:6px 16px;background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:6px;cursor:pointer;font-size:.8rem',
+    onclick:()=>{tb.lines=[];_tbEl=null;_tbR=0;render()}},'Clear');
+  const bar=h('div',{cls:'diag-bar',style:'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px'},sel,ti,h('div',{cls:'diag-bar-btns',style:'display:flex;gap:8px'},run,...(stop?[stop]:[]),clr));
+  _tbEl=h('div',{cls:'stream',style:'flex:1;overflow-y:auto;min-height:0'});
+  tb.lines.forEach(l=>{_tbEl.append(h('div',{},l))});_tbR=tb.lines.length;
+  _tbEl.scrollTop=_tbEl.scrollHeight;
+  if(S._diagOpen==null)S._diagOpen=true;
+  const diagArrow=h('span',{cls:'arrow',style:'transition:transform .2s;display:inline-block;'+(S._diagOpen?'transform:rotate(90deg)':'')},'\u25B6');
+  const diagTog=h('button',{cls:'collapse-btn',onclick:()=>{S._diagOpen=!S._diagOpen;render()}},diagArrow);
+  const diagBody=S._diagOpen?[bar,_tbEl]:[];
+  const diagCard=h('div',{cls:'card',style:'display:flex;flex-direction:column;'+(S._diagOpen?'flex:1;min-height:0;overflow:hidden':'')},h('h3',{},'Network Diagnostics',diagTog),...diagBody);
+  const syslogCard=renderSyslog();
+  return h('div',{style:'display:flex;flex-direction:column;height:calc(100vh - 120px)'},diagCard,syslogCard);
+}
+function renderToolboxStream(){
+  if(!_tbEl||S.page!=='toolbox'){render();return}
+  const tb=S.toolbox;
+  while(_tbR<tb.lines.length){_tbEl.append(h('div',{},tb.lines[_tbR]));_tbR++}
+  _tbEl.scrollTop=_tbEl.scrollHeight;
+  if(!tb.running)render();
+}
+function isSafeTarget(s){return s.length>0&&s.length<=253&&!/^-/.test(s)&&/^[a-zA-Z0-9.\-:]+$/.test(s)}
+async function tbRun(){
+  const tb=S.toolbox;if(!tb.target.trim())return;
+  if(!isSafeTarget(tb.target.trim())){toast('Target không hợp lệ (chỉ hostname/IP)','err');return}
+  tb.lines=[];_tbEl=null;_tbR=0;tb.running=true;render();
+  try{const r=await fetch('/api/toolbox/run',{method:'POST',body:JSON.stringify({tool:tb.tool,target:tb.target})});
+    if(!r.ok){const d=await r.json();tb.lines.push('Error: '+(d.error||'failed'));tb.running=false;render()}}
+  catch(e){tb.lines.push('Error: '+e.message);tb.running=false;render()}
+}
+async function tbStop(){try{await fetch('/api/toolbox/stop',{method:'POST'})}catch(_){}}
+
+// --- Syslog viewer ---
+let _slEl=null,_slR=0;
+function renderSyslog(){
+  if(!S.syslog)S.syslog={lines:[],running:false,filter:''};
+  const sl=S.syslog;
+  const fi=h('input',{type:'text',value:sl.filter,placeholder:'Filter (ví dụ: MQTT, HTTP, error...)',
+    style:'flex:1;padding:8px 12px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:6px;font-size:.85rem',
+    oninput:e=>{sl.filter=e.target.value;renderSyslogFiltered()}});
+  const toggle=h('button',{style:'padding:6px 16px;background:'+(sl.running?'#dc2626':'#2563eb')+';color:white;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:.8rem',
+    onclick:()=>{sl.running?slStop():slStart()}},sl.running?'Stop':'Start');
+  const clr=h('button',{style:'padding:6px 16px;background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:6px;cursor:pointer;font-size:.8rem',
+    onclick:()=>{sl.lines=[];_slEl=null;_slR=0;render()}},'Clear');
+  const bar=h('div',{cls:'sl-bar',style:'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px'},fi,h('div',{cls:'sl-bar-btns',style:'display:flex;gap:8px'},toggle,clr));
+  _slEl=h('div',{cls:'stream',style:'flex:1;overflow-y:auto;min-height:0'});
+  const filtered=sl.filter?sl.lines.filter(l=>l.text.toLowerCase().includes(sl.filter.toLowerCase())):sl.lines;
+  filtered.forEach(l=>{_slEl.append(slRow(l))});_slR=sl.lines.length;
+  _slEl.scrollTop=_slEl.scrollHeight;
+  return h('div',{cls:'card',style:'display:flex;flex-direction:column;flex:2;min-height:0;overflow:hidden'},h('h3',{},'System Log'),bar,_slEl);
+}
+function slRow(l){
+  const d=h('div',{style:'padding:2px 0;border-bottom:1px solid #1e293b'});
+  if(l.level==='warn')d.style.color='#facc15';
+  else if(l.level==='err')d.style.color='#f87171';
+  d.textContent=l.text;
+  return d;
+}
+function renderSyslogStream(){
+  if(!_slEl||S.page!=='toolbox')return;
+  const sl=S.syslog;
+  while(_slR<sl.lines.length){
+    const l=sl.lines[_slR];
+    if(!sl.filter||l.text.toLowerCase().includes(sl.filter.toLowerCase())){
+      _slEl.append(slRow(l));
+    }
+    _slR++;
+  }
+  _slEl.scrollTop=_slEl.scrollHeight;
+}
+function renderSyslogFiltered(){
+  if(!_slEl)return;
+  const sl=S.syslog;
+  _slEl.innerHTML='';
+  const filtered=sl.filter?sl.lines.filter(l=>l.text.toLowerCase().includes(sl.filter.toLowerCase())):sl.lines;
+  filtered.forEach(l=>{_slEl.append(slRow(l))});
+  _slEl.scrollTop=_slEl.scrollHeight;
+}
+async function slStart(){
+  const sl=S.syslog;sl.running=true;render();
+  try{const r=await fetch('/api/syslog/start',{method:'POST'});
+    if(!r.ok){sl.running=false;render()}}
+  catch(_){sl.running=false;render()}
+}
+async function slStop(){
+  try{await fetch('/api/syslog/stop',{method:'POST'})}catch(_){}
+  S.syslog.running=false;render();
+}
 function connectWS(){
   if(S.ws)S.ws.close();
   const ws=new WebSocket('ws://'+location.host+'/ws');
@@ -841,6 +879,22 @@ function connectWS(){
     try{
       const d=JSON.parse(e.data);
       if(d.type==='status'){S.status=d;if(S.page==='status')updateStatus()}
+      else if(d.type==='toolbox'){
+        if(S.toolbox){
+          if(d.done){S.toolbox.running=false;S.toolbox.lines.push('--- done (exit code: '+d.code+') ---')}
+          else if(d.line!=null){S.toolbox.lines.push(d.line)}
+          if(S.page==='toolbox')renderToolboxStream();
+        }
+      }
+      else if(d.type==='syslog'){
+        if(!S.syslog)S.syslog={lines:[],running:false,filter:''};
+        if(d.stopped){S.syslog.running=false;if(S.page==='toolbox')render()}
+        else if(d.line!=null){
+          S.syslog.lines.push({text:d.line,level:d.level||'info'});
+          if(S.syslog.lines.length>200)S.syslog.lines.shift();
+          if(S.page==='toolbox')renderSyslogStream();
+        }
+      }
       else{
         d._ts=new Date().toLocaleTimeString('vi',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
         S.stream.push(d);
@@ -866,5 +920,6 @@ async function checkSession(){
 }
 checkSession();
 </script>
+<script src="/modals.js"></script>
 </body>
 </html>

@@ -45,13 +45,15 @@ fn run_publish_loop(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = state.get();
 
-    // Tạo client ID ngẫu nhiên để broker không giữ session cũ
+    // Client ID ngẫu nhiên mỗi lần connect — broker không giữ session cũ
     let random_suffix: u32 = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0) as u32)
         ^ (std::process::id() << 16);
-    let client_id = format!("{}-{:08x}", config.mqtt.client_id, random_suffix);
+    let client_id = format!("{}-{:08x}", config.general.device_name, random_suffix);
+    // Lưu client_id để UI hiển thị
+    *stats.mqtt_client_id.lock().unwrap() = client_id.clone();
 
     let mut opts = MqttOptions::new(&client_id, &config.mqtt.broker, config.mqtt.port);
     opts.set_keep_alive(Duration::from_secs(30));

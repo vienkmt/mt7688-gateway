@@ -1,7 +1,7 @@
 # Code Standards - ugate IoT Gateway
 
 **Last Updated:** 2026-03-08
-**Version:** 3.0 (Phases 1-6 Complete)
+**Version:** 1.6.0 (Phases 1-9 Complete)
 
 ## Project Structure
 
@@ -9,37 +9,65 @@
 ugate/
 ├── Cargo.toml                  # Project manifest (workspace member)
 ├── src/
-│   ├── main.rs                 # Startup, channel creation, task spawn
+│   ├── main.rs                 # Startup, channel creation, task spawn (~300 lines)
 │   ├── config.rs               # AppState, RwLock<Config>, watch channel
 │   ├── commands.rs             # Command enum, parsing (JSON/binary)
 │   ├── time_sync.rs            # HTTP-based NTP at startup
-│   ├── uci.rs                  # UCI wrapper for config I/O
+│   ├── uci.rs                  # UCI wrapper for config I/O (146 lines)
 │   │
 │   ├── channels/               # Data fan-out (outbound)
 │   │   ├── mod.rs
-│   │   ├── mqtt.rs             # MQTT pub/sub (std::thread, rumqttc sync)
-│   │   ├── http_pub.rs         # HTTP POST publisher (tokio::spawn)
+│   │   ├── mqtt.rs             # MQTT pub/sub (std::thread, rumqttc sync) (~250 lines)
+│   │   ├── http_pub.rs         # HTTP POST publisher (tokio::spawn) (~180 lines)
 │   │   ├── tcp.rs              # TCP server + client (async)
 │   │   ├── buffer.rs           # Offline buffer (RAM + disk)
 │   │   └── reconnect.rs        # Exponential backoff logic
 │   │
 │   ├── uart/                   # UART I/O
 │   │   ├── mod.rs
-│   │   ├── reader.rs           # AsyncFd, frame detection
+│   │   ├── reader.rs           # AsyncFd, frame detection (~180 lines)
 │   │   └── writer.rs           # UART TX queue
 │   │
 │   ├── gpio.rs                 # GPIO control (chardev ioctl)
 │   │
-│   └── web/                    # HTTP server + WebSocket
-│       ├── mod.rs
-│       ├── server.rs           # tiny-http, routing, API handlers
-│       ├── auth.rs             # Session manager, password
-│       ├── status.rs           # SharedStats (atomic counters)
-│       ├── ws.rs               # WebSocket manager, tungstenite
-│       └── [embedded_index.html] (Vue SPA in include_str!)
+│   └── web/                    # HTTP server + WebSocket + API handlers
+│       ├── mod.rs              # Shared helpers (json_resp, jval, json_escape) (75 LOC)
+│       ├── server.rs           # HTTP routing, handlers (573 LOC)
+│       ├── auth.rs             # Session manager, token-based (141 LOC)
+│       ├── status.rs           # SharedStats (atomic counters) (206 LOC)
+│       ├── ws.rs               # WebSocket, tungstenite (121 LOC)
+│       ├── wifi.rs             # WiFi 4 modes, scan, status (209 LOC)
+│       ├── netcfg.rs           # Network, NTP, routing (350 LOC)
+│       ├── maintenance.rs      # Backup/restore/upgrade (362 LOC)
+│       ├── toolbox.rs          # System tools and diagnostics (135 LOC)
+│       ├── syslog.rs           # Syslog viewer (165 LOC)
+│       └── embedded_index.html # Vanilla JS SPA (925 LOC)
+│
+│   ├── assets/                 # Frontend assets (174 LOC)
+│   │   ├── style.css           # Responsive CSS styling (132 LOC)
+│   │   └── preview-mock.js     # Local preview support (42 LOC)
+│   │
+│   └── modals/                 # Modal dialog system (56 LOC)
+│       ├── modals-loader.js    # Modal injection + helper functions (42 LOC)
+│       └── help-data-wrap-format.html  # Data Wrap format help modal (14 LOC)
 │
 └── Cargo.lock
 ```
+
+**Web Modules (Total: 2,538+ LOC):**
+- Server: 588 LOC (HTTP routing, REST API endpoints)
+- WiFi: 209 LOC (4 modes, scanning, status, draft/apply)
+- Network: 350 LOC (LAN/WAN, NTP, static routing, draft/apply/revert)
+- Maintenance: 362 LOC (backup/restore, firmware upgrade, factory reset)
+- Toolbox: 135 LOC (ping, traceroute, nslookup diagnostics)
+- Syslog: 165 LOC (OpenWrt log viewer with filtering)
+- Auth: 141 LOC (token-based sessions, max 4, 24h TTL, rate limiting)
+- WebSocket: 121 LOC (tungstenite, live UART + stats streaming)
+- Status: 210 LOC (atomic counters, UART stats, channel monitoring)
+- Helpers: 75 LOC (json_resp, jval, json_escape, shared utilities)
+- Frontend HTML: 925 LOC (vanilla JS SPA, no framework, no npm)
+- Frontend CSS: 132 LOC (responsive styles, mobile-first)
+- Modal System: 56 LOC (modal injection, help dialogs)
 
 ## Dependencies Overview
 
@@ -56,9 +84,8 @@ ugate/
 - **tungstenite** (v0.21): WebSocket (async-std compatible)
 
 ### Serialization
-- **serde** (v1): JSON/TOML serialization
-- **serde_json**: JSON handling
-- **toml**: Configuration file parsing
+- **serde** (v1): Serialization framework (derive macros only, no_std)
+- **Note:** No serde_json — manual JSON formatting with format!() to keep binary small
 
 ### System & Logging
 - **log** (v0.4): Log facade
@@ -282,6 +309,85 @@ ugate/src/
     └── ws.rs        ~150 lines
 ```
 
+## Modal System
+
+Modal HTML templates tách riêng trong `ugate/src/modals/` — content HTML thuần, JS chỉ load + inject data.
+
+### Cấu trúc
+
+```
+ugate/src/
+├── assets/
+│   ├── style.css            # CSS chính
+│   └── preview-mock.js      # Mock data cho preview (không deploy)
+├── modals/
+│   ├── modals-loader.js     # openModal() helper + show*() functions
+│   └── help-*.html          # HTML templates cho từng modal
+```
+
+### Thêm modal mới
+
+1. **HTML template** — `ugate/src/modals/help-<context>-<topic>.html`
+   - Dùng class `modal-pre` cho code blocks
+   - Đặt `id` cho elements cần inject dynamic data
+2. **Server route** — `web/server.rs`:
+   ```rust
+   const MODAL_HELP_FOO: &str = include_str!("../modals/help-foo-bar.html");
+   // Trong match routes:
+   (Get, "/modals/help-foo-bar") => Response::from_string(MODAL_HELP_FOO).with_header(content_type_html())
+   ```
+3. **JS function** — `modals/modals-loader.js`:
+   ```js
+   function showFooHelp() {
+     openModal('foo-modal', 'Title', '/modals/help-foo-bar', function(body) {
+       body.querySelector('#el-id').textContent = dynamicValue;
+     });
+   }
+   ```
+4. **Gọi từ UI**: `helpBtn(()=>showFooHelp())` — icon ⓘ tròn, hover xanh
+
+### UI Helpers
+
+| Helper | Mô tả |
+|--------|--------|
+| `helpBtn(fn)` | Nút icon ⓘ (SVG info circle), class `.btn-help` |
+| `openModal(id, title, url, onLoaded)` | Fetch HTML template, tạo overlay + modal container |
+| `.modal-pre` | CSS class cho code blocks trong modal |
+
+### Local Preview (không cần device)
+
+Preview Web UI trên máy local bằng Python HTTP server + mock data:
+
+```bash
+cd ugate/src && python3 -c "
+import http.server
+class H(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        r={
+          '/':('embedded_index.html','text/html'),
+          '/style.css':('assets/style.css','text/css'),
+          '/modals.js':('modals/modals-loader.js','application/javascript'),
+          '/modals/help-data-wrap-format':('modals/help-data-wrap-format.html','text/html'),
+          '/preview-mock.js':('assets/preview-mock.js','application/javascript'),
+        }
+        if self.path in r:
+            f,ct=r[self.path];self.send_response(200)
+            self.send_header('Content-Type',ct);self.end_headers()
+            self.wfile.write(open(f,'rb').read())
+        else:
+            self.send_response(404);self.end_headers()
+http.server.HTTPServer(('',8901),H).serve_forever()
+"
+```
+
+Mở `http://localhost:8901`, Console:
+```js
+fetch('/preview-mock.js').then(r=>r.text()).then(eval)
+```
+
+Mock data file: `assets/preview-mock.js` — set `S.page`, `S.config`, `S.status` rồi gọi `render()`.
+Thêm route mới vào dict `r` khi tạo thêm modal/asset.
+
 ## Configuration (UCI)
 
 **File:** `/etc/config/ugate` (created automatically if missing)
@@ -436,16 +542,25 @@ ssh root@10.10.10.1 'ps aux | grep ugate'
 ssh root@10.10.10.1 'logread | grep ugate'
 ```
 
-## Breaking Changes (v2.0 → v3.0)
+## Breaking Changes & Phase 7 Updates (v2.0 → v3.0)
 
-| Change | Old | New | Migration |
-|--------|-----|-----|-----------|
-| **Channel types** | thread::spawn | Tokio + std::thread hybrid | Update imports, use appropriate channel |
-| **GPIO API** | GPIO crate | chardev ioctl | Recompile, no source change |
-| **MQTT** | AsyncClient | sync Client in OS thread | Requires rumqttc 0.24+ |
-| **Config file** | `/etc/vgateway.toml` | `/etc/config/ugate` (UCI) | Migrate settings via uci commands |
-| **Frame modes** | Simple newline | line/fixed/timeout | Update UCI config with frame_mode |
-| **Command dispatch** | Direct GPIO call | Command enum + dispatcher | Wrap in Command, send via channel |
+| Feature | Old (v2.0) | New (v3.0 Phase 7) | Migration Notes |
+|---------|-----------|------------------|-----------------|
+| **Frontend** | Vue.js framework | Vanilla JS (no build step) | Remove npm dependencies, simpler deployment |
+| **WiFi Config** | Simple on/off | 4 modes (STA/AP/STA+AP/Off) | Update UI, add mode selector |
+| **Network Config** | WAN only | LAN+WAN+NTP+Routes | More complex, but full control |
+| **Draft/Apply** | Immediate | Save to RAM → Apply to flash | User must click "Apply" to persist |
+| **Session auth** | No token | Token-based (24h TTL) | Add login endpoint to client |
+| **Upgrade** | Manual | Local IPK + Remote URL | Firmware update via web UI now |
+| **Backup** | Manual UCI export | Web UI download | Full config backup in one click |
+
+**Migration for Existing Deployments:**
+1. Backup config: `cp /etc/config/ugate /tmp/ugate.backup`
+2. Build Phase 7 binary
+3. Deploy new binary
+4. Review WiFi/Network settings (draft mode requires Apply)
+5. Test WiFi mode switching and network config
+6. Verify session login works (24h TTL)
 
 ## References
 

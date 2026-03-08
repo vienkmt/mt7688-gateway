@@ -1,209 +1,171 @@
 # Codebase Summary - ugate IoT Gateway
 
 **Generated:** 2026-03-08
-**Version:** 3.0 (Phases 1-6 Complete)
-**Total Lines of Code:** ~3,070 (ugate/src)
-**Total Files:** 21
+**Version:** 1.6.0 (Phases 1-9 Complete)
+**Total Lines of Code:** ~4,795 (Rust) + 1,113 (HTML/CSS/JS)
+**Total Files:** 34 (core + web modules + channels + assets)
 
 ## Project Overview
 
-**ugate** is a production-ready IoT Gateway firmware for MT7688 (MIPS 580MHz, 64MB RAM) running OpenWrt 24.10. It provides multi-channel data acquisition and command dispatch with the following capabilities:
+**ugate** is a production-ready IoT Gateway firmware for MT7688 (MIPS 580MHz, 64MB RAM) running OpenWrt 24.10. It provides multi-channel data acquisition with MQTT, HTTP, TCP, and WebSocket support.
 
-- **Real-time UART data collection** with configurable frame detection (line-based, fixed-length, timeout-based)
-- **Multi-channel fan-out** to MQTT (pub/sub), HTTP POST, and TCP (server/client)
-- **Bi-directional command control** from WebSocket, TCP, and MQTT subscription
-- **GPIO control** via chardev ioctl (32+ GPIO lines)
-- **Web management UI** with Vue.js SPA and session authentication
-- **Offline buffering** with RAM→disk overflow
-- **Flexible UCI-based configuration** with hot-reload
-- **Syslog integration** for OpenWrt logging
+**Core Capabilities:**
+- Real-time UART data collection with configurable frame detection (line/fixed/timeout modes)
+- Multi-channel fan-out to MQTT, HTTP POST, TCP (server/client)
+- Bi-directional command control from WebSocket, TCP, MQTT
+- WiFi Management (4 modes: STA/AP/STA+AP/Off), scanning, dynamic switching
+- Network Configuration (LAN/WAN IP, NTP, static routing, metrics)
+- System Maintenance (backup/restore, factory reset, firmware upgrade)
+- GPIO control via chardev ioctl (32+ lines)
+- Web management UI (6 tabs, vanilla JS, draft/apply pattern)
+- Offline buffering with RAM→disk overflow
+- Session Authentication (token-based, 4 max sessions, 24h TTL)
+- WebSocket real-time updates via tungstenite
+- Syslog integration for OpenWrt logging
 
-**Phases 1-6 complete.** Ready for production deployment.
+**Phases 1-9 complete.** Production ready with full feature set.
 
 ## Project Structure
 
 ```
 src/
-├── main.rs                 # HTTP server (tiny-http), routing, request handlers
-├── system_info.rs          # System stats collection (CPU, RAM, uptime, etc.)
-├── config.rs               # MQTT/HTTP config storage & AppState
-├── html_template.rs        # Dashboard HTML page rendering
-├── html_config.rs          # Config page HTML rendering
-├── network_config.rs       # Network interface configuration logic
-├── html_network.rs         # Network config page HTML rendering
-├── uci.rs                  # OpenWrt UCI command wrapper
-├── uart_reader.rs          # UART serial data reader (background thread)
-├── mqtt_publisher.rs       # MQTT client (background thread)
-├── http_publisher.rs       # HTTP POST publisher (background thread)
-└── time_sync.rs            # System clock synchronization
+├── main.rs (270 LOC)           # Startup, runtime setup, task spawning
+├── config.rs (486 LOC)         # AppState, RwLock<Config>, watch channel
+├── uci.rs (146 LOC)            # UCI CLI wrapper
+├── commands.rs (139 LOC)       # Command enum, parsing
+├── time_sync.rs (83 LOC)       # HTTP-based NTP at startup
+├── gpio.rs (171 LOC)           # GPIO control via chardev ioctl
+│
+├── channels/                   # Data routing (929 LOC)
+│   ├── mod.rs (12 LOC)
+│   ├── mqtt.rs (202 LOC)       # MQTT pub/sub (std::thread, rumqttc)
+│   ├── http_pub.rs (139 LOC)   # HTTP POST publisher (spawn_blocking)
+│   ├── tcp.rs (195 LOC)        # TCP server + client (async)
+│   ├── buffer.rs (222 LOC)     # Offline buffer (RAM + disk)
+│   └── reconnect.rs (66 LOC)   # Exponential backoff
+│
+├── uart/                       # UART I/O (308 LOC)
+│   ├── mod.rs (2 LOC)
+│   ├── reader.rs (233 LOC)     # AsyncFd/epoll, frame detection
+│   └── writer.rs (73 LOC)      # UART TX queue
+│
+├── assets/                     # Frontend assets (174 LOC)
+│   ├── style.css (132 LOC)     # CSS styling
+│   └── preview-mock.js (42 LOC) # Local preview support
+│
+├── modals/                     # Modal dialogs (56 LOC)
+│   ├── help-data-wrap-format.html (14 LOC) # Help modal template
+│   └── modals-loader.js (42 LOC)           # Modal injection system
+│
+└── web/                        # HTTP + WebSocket (2,538 LOC)
+    ├── mod.rs (75 LOC)         # Shared helpers (json_resp, jval, etc.)
+    ├── server.rs (588 LOC)     # tiny-http routing, handlers
+    ├── auth.rs (141 LOC)       # Session manager (token-based)
+    ├── status.rs (210 LOC)     # SharedStats (atomic counters)
+    ├── ws.rs (121 LOC)         # WebSocket (tungstenite)
+    ├── wifi.rs (209 LOC)       # WiFi modes (STA/AP/STA+AP/Off)
+    ├── netcfg.rs (350 LOC)     # Network/NTP/routing config
+    ├── maintenance.rs (362 LOC) # Backup/restore/upgrade
+    ├── toolbox.rs (135 LOC)    # Toolbox API
+    ├── syslog.rs (165 LOC)     # Syslog viewer
+    └── embedded_index.html (925 LOC) # Vanilla JS SPA
 
-.cargo/
-├── config.toml             # MIPS target linker configuration
-
-Cross.toml                   # Cross-compilation settings for mipsel-unknown-linux-musl
-
-Cargo.toml                   # Project dependencies
-
-devicetree/
-├── linkit.dts              # Device tree source (custom GPIO/peripheral mappings)
-└── linkit.dtb              # Compiled device tree binary
+Cargo.toml (v1.6.0)            # Project manifest
+build.rs                        # Build script for compile-time info
 ```
 
-## Core Modules
+## Core Components
 
-### Main Server (src/main.rs)
+### Main Entry Point (src/main.rs - 270 LOC)
 
-**Responsibility:** HTTP server, request routing, configuration/network management API (v2.0 Hybrid)
+**Responsibility:** Initialize Tokio runtime, spawn all async tasks, manage shared state
 
-**Key Features:**
-- Listens on `0.0.0.0:8889`
-- Routes:
-  - `GET /` → Dashboard with system info
-  - `GET/POST /config` → MQTT/HTTP config page
-  - `GET /network` → Redirects to /config
-  - `GET/POST /api/network` → JSON API for network config
-- Spawns tasks on startup (hybrid async/sync):
-  1. `tokio::spawn(oled::display_loop)` - OLED display
-  2. `std::thread::spawn(mqtt_publisher::run_sync)` - MQTT in OS thread (NOT tokio)
-  3. `tokio::spawn(uart_reader::run)` - UART with AsyncFd
-  4. `tokio::spawn(http_publisher::run)` - HTTP with spawn_blocking
-  5. `spawn_blocking(run_http_server)` - tiny-http blocking server
+**Architecture:**
+- Single-thread executor: `#[tokio::main(flavor = "current_thread")]` with epoll
+- Spawns tasks:
+  1. HTTP server (spawn_blocking with tiny-http)
+  2. UART reader (AsyncFd/epoll)
+  3. MQTT publisher (std::thread, sync rumqttc Client)
+  4. HTTP publisher (tokio::spawn with spawn_blocking ureq)
+  5. TCP server/client (async tasks)
+  6. GPIO heartbeat task (tokio::spawn)
+  7. WebSocket manager (async)
 
-**Architecture (v2.0):**
-- Single-thread Tokio runtime: `#[tokio::main(flavor = "current_thread")]`
-- Hybrid channels:
-  - `std::sync::mpsc::channel` for UART → MQTT (cross-thread)
-  - `tokio::sync::mpsc::channel` for UART → HTTP (async, capacity 64)
-- `tokio::sync::watch<()>` for config change notifications (notify-only)
-- Manual JSON/form parsing (no serde_json for small binary)
-- URL encoding/decoding for form data
-- Network config validation before applying
+**Channels (hybrid):**
+- UART → MQTT: `std::sync::mpsc` (cross-thread compatible)
+- UART → HTTP: `tokio::sync::mpsc` (async, capacity 64)
+- Config changes: `tokio::sync::watch<()>` (notify-only)
 
-### System Info (src/system_info.rs)
+### Web Server (src/web/server.rs - 588 LOC)
 
-**Responsibility:** Collect and expose system statistics
+**Responsibility:** HTTP routing, REST API, request handling
 
-**Collects:**
-- Uptime (from /proc/uptime)
-- CPU usage (from /proc/stat)
-- Memory usage (from /proc/meminfo)
-- Network interface stats (via `ifconfig`)
+**Routes:**
+- `GET /` → Embedded SPA (925 LOC vanilla JS)
+- `GET /style.css`, `/preview-mock.js`, `/modals/*.html`, `/modals/*.js` → Static assets
+- `POST /api/login`, `GET /api/session` → Authentication (SessionManager)
+- `GET/POST /api/*` → REST API handlers (auth required)
+- **Endpoints:** login, session, status, wifi/{status,mode,scan}, network/{apply,revert,changes}, syslog, config, password, reboot, upgrade, backup, factory-reset, toolbox
+- **Port:** 8888 (configurable via UCI)
 
-**Returns:** `SystemInfo` struct consumed by HTML template
+### Configuration Management (src/config.rs - 486 LOC)
 
-### Configuration Management (src/config.rs)
+**Responsibility:** UCI-based config with hot-reload
 
-**Responsibility:** Runtime configuration storage and access with change notifications
+**Key Components:**
+- `AppState`: RwLock<Config> + watch::Sender<()> for notifications
+- `Config`: MQTT, HTTP, TCP, UART, GPIO, Web settings
+- Thread-safe reads via RwLock; watch<()> notifies async tasks on change
+- MQTT publisher polls every 2s (can't use async watch in std::thread)
 
-**Contains:**
-- `AppState` - Thread-safe config wrapper with watch notification
-  - `config: RwLock<Config>` - Concurrent reads, exclusive writes
-  - `config_tx: watch::Sender<()>` - Notify subscribers on update
-- `Config` - MQTT, HTTP, UART, General settings
-- `MqttConfig` - Broker URL, port, TLS, topic, client ID
-- `HttpConfig` - Endpoint URL, enabled flag
-- `UartConfig` - Serial port, baudrate, enabled flag
-- `GeneralConfig` - Data collection interval (seconds)
+### Key Modules (Concise Summary)
 
-**Thread Safety:**
-- `RwLock<Config>` allows concurrent reads from multiple tasks
-- `watch::Sender<()>` notifies async subscribers immediately on `state.update()`
-- MQTT publisher (std::thread) polls `state.get()` every 2s instead of using watch
-
-### Network Configuration (src/network_config.rs)
-
-**Responsibility:** WAN interface (eth0.2) configuration management
-
-**Features:**
-- Supports DHCP and Static IP modes
-- Reads/writes via OpenWrt UCI: `network.wan.proto`, `network.wan.ipaddr`, etc.
-- Validation: IP format, netmask, gateway in subnet, LAN conflict check
-- Applies changes via `ifdown wan` / `ifup wan` commands
-
-**Key Structs:**
-- `NetworkMode` - Enum: `Dhcp` or `Static`
-- `NetworkConfig` - Configuration: mode, IP, netmask, gateway, DNS
-- `NetworkStatus` - Live status: current IP, gateway, DNS servers, interface state
-
-**Validation Functions:**
-- `is_valid_ipv4()` - Checks IPv4 format (a.b.c.d)
-- `is_valid_netmask()` - Validates subnet mask (contiguous 1s)
-- `gateway_in_subnet()` - Confirms gateway is on same subnet
-- `conflicts_with_lan()` - Prevents WAN IP from conflicting with LAN (10.10.10.0/24)
-
-### UCI Wrapper (src/uci.rs)
-
-**Responsibility:** Safe wrapper around OpenWrt `uci` CLI commands
-
-**Methods:**
-- `Uci::get(key)` → `Result<String, String>` - Get config value
-- `Uci::set(key, value)` → `Result<(), String>` - Set config value
-- `Uci::delete(key)` → `Result<(), String>` - Delete config option
-- `Uci::commit(config)` → `Result<(), String>` - Apply changes
-
-**Example:** `Uci::get("network.wan.ipaddr")` reads current WAN IP
-
-### HTML Templates
-
-**html_template.rs** - Dashboard page with system stats and config links
-**html_config.rs** - MQTT/HTTP configuration form
-**html_network.rs** - WAN network configuration form with live status display
-
-All templates:
-- Inline CSS for minimal HTML size
-- Client-side JavaScript for form interactions (e.g., show/hide static IP fields)
-- HTML escaping to prevent XSS
-
-### Background Publishers (v2.0 Hybrid)
-
-**uart_reader.rs** - Async UART reader (`tokio::spawn`)
-- Uses `AsyncFd` with epoll for non-blocking serial I/O
-- Opens port with `O_NONBLOCK`, configures via `libc::termios`
-- Sends to MQTT via `std::sync::mpsc` (cross-thread)
-- Sends to HTTP via `tokio::sync::mpsc` (async)
-- Listens for config changes via `watch::Receiver<()>.changed()`
-
-**mqtt_publisher.rs** - Sync MQTT publisher (`std::thread::spawn`)
-- Uses `rumqttc::Client` (sync, NOT AsyncClient) due to MIPS compatibility issues
-- Spawns separate connection thread for network I/O
-- Receives UART data via `std::sync::mpsc::Receiver`
-- Polls config every 2s (cannot use async watch in std::thread)
-- Publishes system info at configurable interval
-
-**http_publisher.rs** - Async HTTP publisher (`tokio::spawn`)
-- Receives UART data via `tokio::sync::mpsc::Receiver`
-- Uses `tokio::task::spawn_blocking` for ureq HTTP POST
-- Listens for config changes via `watch::Receiver<()>.changed()`
-- `tokio::select!` for multiplexing UART, config, and interval timer
-
-**oled.rs** - Async OLED display (`tokio::spawn`)
-**time_sync.rs** - Syncs system clock before TLS (prevents cert validation failures)
-
-**Channel Model (v2.0 Actual):**
-- `std::sync::mpsc::channel<String>` for UART → MQTT (cross-thread, unbounded)
-- `tokio::sync::mpsc::channel<String>` for UART → HTTP (async, capacity 64)
-- `tokio::sync::watch<()>` for config notifications (notify-only, no data)
-- UART reader and HTTP publisher use `config_rx.changed()` in tokio::select!
-- MQTT publisher polls config every 2s
-- Non-blocking I/O via AsyncFd + epoll
+| Module | LOC | Responsibility |
+|--------|-----|-----------------|
+| config.rs | 480 | UCI config + hot-reload |
+| uci.rs | 146 | UCI CLI wrapper |
+| commands.rs | 139 | Command enum + parsing |
+| gpio.rs | 171 | GPIO control (chardev) |
+| time_sync.rs | 83 | HTTP-based NTP |
+| web/server.rs | 588 | HTTP routing + handlers |
+| web/auth.rs | 141 | Session management |
+| web/wifi.rs | 209 | WiFi 4-mode control |
+| web/netcfg.rs | 350 | Network/NTP/routes |
+| web/maintenance.rs | 362 | Backup/restore/upgrade |
+| web/toolbox.rs | 135 | Toolbox API |
+| web/syslog.rs | 165 | Syslog viewer |
+| web/ws.rs | 121 | WebSocket (tungstenite) |
+| web/status.rs | 210 | SharedStats collector |
+| uart/reader.rs | 233 | AsyncFd/epoll UART RX |
+| uart/writer.rs | 73 | UART TX queue |
+| channels/mqtt.rs | 202 | MQTT pub/sub (std::thread) |
+| channels/http_pub.rs | 139 | HTTP POST (spawn_blocking) |
+| channels/tcp.rs | 195 | TCP server/client (async) |
+| channels/buffer.rs | 222 | Offline buffer (RAM+disk) |
 
 ## Dependencies
 
-**Cargo.toml** specifies:
-- `tokio` - Async runtime with single-thread executor and epoll backend
-- `tiny-http` - Minimal HTTP server (blocking, wrapped in spawn_blocking)
-- `libc` - Direct termios/serial configuration (no serialport crate)
-- `rumqttc` - MQTT client (sync Client, not AsyncClient due to MIPS issues)
-- `rustls` + `webpki-roots` - TLS for MQTT
-- `ureq` - HTTP POST (with spawn_blocking wrapper)
-- `toml` + `serde` - Config file parsing
-- `musl-libc` - Static linking for portability
+**Key Crates:**
+- tokio (1.x) — async runtime, single-thread + epoll
+- tiny_http (0.12) — HTTP server, blocking
+- rumqttc (0.24) — MQTT client (sync, not async)
+- rustls (0.22) + webpki-roots (0.26) — TLS
+- tungstenite (0.21) — WebSocket
+- ureq (2.x) — HTTP POST
+- serde + syslog (6) — logging
+- libc (0.2) — GPIO/UART system calls
 
-**Size Optimization:**
-- Tokio single-thread executor (~1MB overhead, justified by resource efficiency on 256MB RAM)
-- Use `heapless` collections where available
-- Enable release strip: `[profile.release] strip = true`
-- Binary target: <800KB (increased from 500KB due to async runtime)
+**Build Profile:**
+```toml
+[profile.release]
+opt-level = "z"        # size optimization
+lto = true             # link-time optimization
+codegen-units = 1      # single codegen unit
+panic = "abort"        # smaller binary
+strip = true           # strip symbols
+```
+
+**Target:** ~800KB binary (release, stripped)
 
 ## Data Flow
 
@@ -218,28 +180,39 @@ All templates:
    │  UART Reader    │
    │  (tokio::spawn) │
    │  AsyncFd/epoll  │
-   └────┬───────┬────┘
-        │       │
-        │       ├─▶ std::sync::mpsc ──▶ ┌────────────────┐
-        │       │                       │ MQTT Publisher │ ──▶ MQTT Broker
-        │       │                       │ (std::thread)  │
-        │       │                       └────────────────┘
-        │       │
-        │       └─▶ tokio::sync::mpsc ──▶ ┌────────────────┐
-        │                                 │ HTTP Publisher │ ──▶ HTTP Server
-        │                                 │ (tokio::spawn) │
-        │                                 └────────────────┘
-        │
-        ▼
-  ┌───────────────────┐
-  │  HTTP Server      │
-  │  (spawn_blocking) │
-  │  :8889            │
-  └───────────────────┘
-   ▲  ▲  ▲
-   │  │  └──── /api/network (JSON)
-   │  └─────── /config (HTML form)
-   └────────── / (Dashboard)
+   └───┬─────┬─────┬──┐
+       │     │     │  │
+       │     │     │  ├─▶ tokio::sync::broadcast ──▶ TCP clients
+       │     │     │  │
+       │     │     │  └─▶ tokio::sync::broadcast ──▶ WebSocket clients
+       │     │     │
+       │     │     └─▶ tokio::sync::mpsc (cap 64) ──▶ ┌─────────────────┐
+       │     │                                        │ HTTP Publisher  │ ──▶ HTTP Server
+       │     │                                        │ (tokio::spawn)  │
+       │     │                                        └─────────────────┘
+       │     │
+       │     └─▶ std::sync::mpsc ──▶ ┌─────────────────┐
+       │                             │ MQTT Publisher  │ ──▶ MQTT Broker
+       │                             │ (std::thread)   │
+       │                             └─────────────────┘
+       │
+       └─▶ tokio::sync::mpsc (cap 64) ──▶ Offline buffer (RAM+disk)
+
+        ┌─────────────────────────────────────────┐
+        │     HTTP Server (spawn_blocking)        │
+        │     tiny-http :8888                     │
+        ├─────────────────────────────────────────┤
+        │ GET  /                → Vanilla JS SPA  │
+        │ GET  /style.css       → External CSS    │
+        │ GET  /modals/*.html   → Modal templates │
+        │ POST /api/login       → Auth            │
+        │ GET  /api/session     → Session check   │
+        │ GET/POST /api/*       → REST handlers   │
+        │ GET  /ws              → WebSocket       │
+        └─────────────────────────────────────────┘
+             ▲       ▲           ▲
+             │       │           │
+    Dashboard UI  REST APIs   WebSocket live
 ```
 
 ## Configuration Files
@@ -249,80 +222,29 @@ All templates:
 - **Cross.toml** - Cross-compilation target image
 - **.cargo/config.toml** - MIPS linker configuration
 
-## Compilation & Deployment
+## Build & Deploy
 
-**Build:**
+**Cross-compile for MIPS:**
 ```bash
 cross +nightly build --target mipsel-unknown-linux-musl --release
 ```
 
-**Deploy:**
-```bash
-scp -O target/mipsel-unknown-linux-musl/release/{binary} root@10.10.10.1:/tmp/
-ssh root@10.10.10.1 'chmod +x /tmp/{binary} && nohup /tmp/{binary} > /var/log/gateway.log 2>&1 &'
-```
+**Target:** ~800KB binary size (release, stripped)
 
-**Target Size:** < 500KB (optimized release build with stripping)
+## Runtime Architecture
 
-## Key Constraints
+**Hybrid Async/Sync Model:**
+- Tokio single-thread executor (epoll-based I/O)
+- std::thread for MQTT (rumqttc sync Client, more stable on MIPS)
+- spawn_blocking for tiny-http and ureq HTTP
 
-| Constraint | Impact | Mitigation |
-|-----------|--------|-----------|
-| 580MHz CPU (single-core) | Limited processing | Tokio async avoids context switching overhead |
-| 256MB RAM | OOM risk | Broadcast channels (128 msgs), tokio lightweight tasks |
-| 25MB available flash | Binary size limit | Release build + strip, careful dep selection |
-| MIPS 32-bit | No AtomicU64 | Use AtomicU32 or Mutex<u64> |
-| No std optional | Binary size | Prefer musl for static linking, tokio has minimal overhead |
+**Channels:**
+- UART → MQTT: `std::sync::mpsc` (cross-thread)
+- UART → HTTP: `tokio::sync::mpsc` (async, capacity 64)
+- Config change: `tokio::sync::watch<()>` (notify-only)
 
-## v2.0 Async Refactor Key Changes
-
-| Component | v1.0 (Blocking) | v2.0 (Hybrid Async) |
-|-----------|-----------------|---------------------|
-| Runtime | Standard threads | Tokio single-thread executor |
-| UART I/O | BufReader blocking | AsyncFd with epoll (`tokio::spawn`) |
-| MQTT | rumqttc::Client | rumqttc::Client in `std::thread::spawn` (NOT AsyncClient) |
-| HTTP Server | tiny-http blocking | tiny-http in `spawn_blocking` |
-| HTTP Publisher | std::thread::spawn | `tokio::spawn` + `spawn_blocking(ureq)` |
-| UART→MQTT Channel | std::sync::mpsc | std::sync::mpsc (unchanged, cross-thread) |
-| UART→HTTP Channel | std::sync::mpsc | tokio::sync::mpsc (async, capacity 64) |
-| Config Notification | Polling | tokio::sync::watch<()> (MQTT still polls) |
-| LED/OLED | thread::spawn | tokio::spawn |
-| Config file | `/etc/v3s-monitor.toml` | `/etc/vgateway.toml` |
-| HTTP Port | 8888 | 8889 |
-| Binary name | v3s-system-monitor | vgateway |
-
-**Why MQTT uses std::thread instead of tokio::spawn:**
-- rumqttc AsyncClient has compatibility issues on MIPS architecture
-- Sync Client with dedicated connection thread is more reliable
-- Config polling (2s) is acceptable overhead for reliability
-
-## Error Handling
-
-- UCI commands: Check exit code, capture stderr
-- Network commands: Validate before application (IP format, subnet mask, conflicts)
-- UART: Bounded channels prevent blocking
-- Publishers: Retry logic in background threads
-
-## Security Considerations
-
-- HTML escaping in templates prevents XSS
-- UCI commands executed with proper quoting
-- No hardcoded credentials (read from config files)
-- TLS support in MQTT (via paho-mqtt)
-- Clock sync before TLS operations (cert validation)
-
-## Testing Strategy
-
-- Manual testing on MT7688AN device
-- Cross-compile verification (binary architecture check)
-- Configuration validation (IP, netmask, gateway)
-- UART data flow testing (loopback)
-- MQTT connection testing (broker availability)
-
-## Future Enhancements
-
-- Device tree customization for additional GPIO/peripherals
-- Multi-interface support (eth0.1 for LAN, eth0.2 for WAN)
-- Advanced network features (static routes, firewall rules)
-- Web UI improvements (Bootstrap CSS, responsiveness)
-- OTA update mechanism
+**Why this design:**
+- Avoids rumqttc AsyncClient hangs on MIPS
+- epoll reduces context switching on 580MHz CPU
+- RwLock enables concurrent reads of config
+- Non-blocking UART via AsyncFd prevents blocking

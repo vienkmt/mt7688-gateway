@@ -27,7 +27,6 @@ pub struct MqttConfig {
     pub tls: bool,
     pub topic: String,
     pub sub_topic: String,
-    pub client_id: String,
     pub username: String,
     pub password: String,
     pub qos: u8,
@@ -107,6 +106,9 @@ pub struct WebConfig {
 pub struct GeneralConfig {
     pub interval_secs: u64,
     pub device_name: String,
+    pub wrap_json: bool,
+    /// true = gửi data dạng text (UTF-8), false = hex encode
+    pub data_as_text: bool,
 }
 
 // --- Defaults ---
@@ -134,7 +136,6 @@ impl Default for MqttConfig {
             tls: true,
             topic: "ugate/data".into(),
             sub_topic: "ugate/cmd".into(),
-            client_id: "ugate-01".into(),
             username: String::new(),
             password: String::new(),
             qos: 1,
@@ -201,6 +202,8 @@ impl Default for GeneralConfig {
         Self {
             interval_secs: 3,
             device_name: "ugate".into(),
+            wrap_json: false,
+            data_as_text: true,
         }
     }
 }
@@ -230,6 +233,8 @@ impl Config {
 config general
     option device_name 'ugate'
     option interval_secs '3'
+    option wrap_json '0'
+    option data_as_text '1'
 
 config mqtt
     option enabled '0'
@@ -238,7 +243,6 @@ config mqtt
     option tls '1'
     option topic 'ugate/data'
     option sub_topic 'ugate/cmd'
-    option client_id 'ugate-01'
     option username ''
     option password ''
     option qos '1'
@@ -293,6 +297,8 @@ config upgrade
         // General
         uci_set("general", "device_name", &self.general.device_name);
         uci_set("general", "interval_secs", &self.general.interval_secs.to_string());
+        uci_set("general", "wrap_json", if self.general.wrap_json { "1" } else { "0" });
+        uci_set("general", "data_as_text", if self.general.data_as_text { "1" } else { "0" });
         // Sync hostname với device_name
         Uci::set("system.@system[0].hostname", &self.general.device_name).ok();
         Uci::commit("system").ok();
@@ -304,7 +310,6 @@ config upgrade
         uci_set("mqtt", "tls", if self.mqtt.tls { "1" } else { "0" });
         uci_set("mqtt", "topic", &self.mqtt.topic);
         uci_set("mqtt", "sub_topic", &self.mqtt.sub_topic);
-        uci_set("mqtt", "client_id", &self.mqtt.client_id);
         uci_set("mqtt", "username", &self.mqtt.username);
         uci_set("mqtt", "password", &self.mqtt.password);
         uci_set("mqtt", "qos", &self.mqtt.qos.to_string());
@@ -368,7 +373,6 @@ config upgrade
         cfg.mqtt.tls = uci_section_get("mqtt", "tls", "1") == "1";
         cfg.mqtt.topic = uci_section_get("mqtt", "topic", &cfg.mqtt.topic);
         cfg.mqtt.sub_topic = uci_section_get("mqtt", "sub_topic", &cfg.mqtt.sub_topic);
-        cfg.mqtt.client_id = uci_section_get("mqtt", "client_id", &cfg.mqtt.client_id);
         cfg.mqtt.username = uci_section_get("mqtt", "username", "");
         cfg.mqtt.password = uci_section_get("mqtt", "password", "");
         cfg.mqtt.qos = uci_section_get("mqtt", "qos", "1").parse().unwrap_or(1);
@@ -429,6 +433,8 @@ config upgrade
         // General
         cfg.general.interval_secs = uci_section_get("general", "interval_secs", "3").parse().unwrap_or(3);
         cfg.general.device_name = uci_section_get("general", "device_name", "ugate");
+        cfg.general.wrap_json = uci_section_get("general", "wrap_json", "0") == "1";
+        cfg.general.data_as_text = uci_section_get("general", "data_as_text", "1") == "1";
 
         log::info!("[Config] Loaded: UART={}@{} MQTT={} HTTP={} TCP={}",
             cfg.uart.port, cfg.uart.baudrate,

@@ -63,29 +63,31 @@ cargo check --target mipsel-unknown-linux-musl
 - **Port:** 8888 (ugate), 8889 (vgateway)
 - **Config:** UCI `/etc/config/ugate` (ugate), TOML `/etc/vgateway.toml` (vgateway)
 
-## Workspace Structure
+## Workspace
 
-```
-mt7688-gateway/
-├── Cargo.toml          # workspace root (shared profile.release)
-├── vgateway/           # UART Gateway (reference)
-└── ugate/              # Modbus Gateway (active development)
-```
+- **ugate/** — IoT Gateway (active development)
+- **vgateway/** — demo/reference only, không cần cho production
 
-Build commands:
 ```bash
 cross +nightly build --target mipsel-unknown-linux-musl --release -p ugate
-cross +nightly build --target mipsel-unknown-linux-musl --release -p vgateway
 ```
 
 ## Documentation
 
-See `./docs` for detailed documentation:
+Tất cả docs nằm trong `./docs/`:
+
+**Phần mềm:**
 - `project-overview-pdr.md` — Requirements
-- `system-architecture.md` — Architecture
+- `system-architecture.md` — Kiến trúc hệ thống
 - `code-standards.md` — Coding conventions
+- `codebase-summary.md` — Tổng quan codebase
+- `development-roadmap.md` — Roadmap & progress
+- `project-changelog.md` — Changelog
+- `uci-config-reference.md` — UCI config chi tiết
+- `deployment-guide.md` — Build, deploy, init script
+- `troubleshooting.md` — Known issues & fixes
 
-## MIPS/Rust Notes
+**Hardware/Platform (docs/other-docs/):**
+- OLED, I2C, GPIO guides, MIPS build notes, OpenWrt config
 
-See `./mips-rust-notes/` for known issues and gotchas:
-- `bugs-and-gotchas.md` — Bugs hay gặp khi dev Rust trên MIPS/OpenWrt (AtomicU64, ioctl, WS handshake, ...)
+**MIPS/Rust bugs:** `./mips-rust-notes/bugs-and-gotchas.md`

@@ -171,12 +171,38 @@ async fn main() {
 
     // --- Fan-out: broadcast UART → MQTT + HTTP ---
     let mut uart_rx = uart_broadcast_tx.subscribe();
+    let fanout_state = state.clone();
     tokio::spawn(async move {
         loop {
             match uart_rx.recv().await {
                 Ok(data) => {
-                    let _ = mqtt_tx.send(data.clone());
-                    let _ = http_tx.try_send(data);
+                    let cfg = fanout_state.get();
+                    let payload = if cfg.general.wrap_json {
+                        // Wrap raw data thành JSON với metadata
+                        let ts = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        // data_as_text: gửi string (UTF-8), ngược lại hex encode
+                        let data_str = if cfg.general.data_as_text {
+                            match std::str::from_utf8(&data) {
+                                Ok(s) => crate::web::json_escape(s),
+                                // Fallback hex nếu không phải UTF-8
+                                Err(_) => data.iter().map(|b| format!("{:02x}", b)).collect(),
+                            }
+                        } else {
+                            data.iter().map(|b| format!("{:02x}", b)).collect()
+                        };
+                        let json = format!(
+                            r#"{{"device_name":"{}","timestamp":{},"data":"{}"}}"#,
+                            crate::web::json_escape(&cfg.general.device_name), ts, data_str
+                        );
+                        json.into_bytes()
+                    } else {
+                        data
+                    };
+                    let _ = mqtt_tx.send(payload.clone());
+                    let _ = http_tx.try_send(payload);
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                     log::warn!("[FanOut] Bỏ qua {} message (quá tải)", n);
@@ -217,22 +243,27 @@ async fn dispatch_command(
             let _ = gpio_tx.send(cmd.clone()).await;
         }
         commands::Command::UartTx { data } => {
+            let bytes = data.as_bytes();
+            let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
             if let Some(ref mut writer) = uart_writer {
-                let bytes = data.as_bytes();
                 match writer.write(bytes) {
                     Ok(()) => {
                         log::info!("[Dispatch] UART TX: {} bytes", bytes.len());
                         stats.uart_tx_bytes.fetch_add(bytes.len() as u32, std::sync::atomic::Ordering::Relaxed);
                         stats.uart_tx_frames.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        // Thông báo WS clients về dữ liệu TX
-                        let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
                         let json = format!(r#"{{"type":"uart","dir":"tx","hex":"{}","len":{}}}"#, hex, bytes.len());
                         let _ = ws_broadcast.send(json);
                     }
-                    Err(e) => log::error!("[Dispatch] UART TX lỗi: {}", e),
+                    Err(e) => {
+                        log::error!("[Dispatch] UART TX lỗi: {}", e);
+                        let json = format!(r#"{{"type":"uart","dir":"tx","hex":"{}","len":{},"err":"write failed"}}"#, hex, bytes.len());
+                        let _ = ws_broadcast.send(json);
+                    }
                 }
             } else {
                 log::warn!("[Dispatch] UART TX không sẵn sàng, bỏ qua");
+                let json = format!(r#"{{"type":"uart","dir":"tx","hex":"{}","len":{},"err":"uart not ready"}}"#, hex, bytes.len());
+                let _ = ws_broadcast.send(json);
             }
         }
     }

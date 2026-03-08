@@ -14,6 +14,8 @@ struct CpuSnapshot {
 /// Bộ đếm atomic chia sẻ giữa UART, MQTT, TCP, GPIO tasks
 pub struct SharedStats {
     cpu_prev: Mutex<Option<CpuSnapshot>>,
+    /// MQTT client ID hiện tại (set bởi MQTT thread mỗi lần connect)
+    pub mqtt_client_id: Mutex<String>,
     pub uart_rx_bytes: AtomicU32,
     pub uart_rx_frames: AtomicU32,
     pub uart_tx_bytes: AtomicU32,
@@ -34,6 +36,7 @@ impl SharedStats {
     pub fn new() -> Self {
         Self {
             cpu_prev: Mutex::new(None),
+            mqtt_client_id: Mutex::new(String::new()),
             uart_rx_bytes: AtomicU32::new(0),
             uart_rx_frames: AtomicU32::new(0),
             uart_tx_bytes: AtomicU32::new(0),
@@ -86,7 +89,7 @@ impl SharedStats {
         let cpu = self.read_cpu_percent();
 
         format!(
-            r#"{{"type":"status","version":"{}","uptime":"{}","datetime":"{}","cpu":{},"ram_used":{},"ram_total":{},"uart":{{"rx_bytes":{},"rx_frames":{},"tx_bytes":{},"tx_frames":{},"failed":{},"config":"{} 8N1"}},"mqtt":{{"enabled":{},"state":"{}","published":{},"failed":{}}},"http":{{"enabled":{},"state":"{}","sent":{},"failed":{}}},"tcp":{{"enabled":{},"state":"{}","connections":{}}},"gpio":[{},{},{},{}]}}"#,
+            r#"{{"type":"status","version":"{}","uptime":"{}","datetime":"{}","cpu":{},"ram_used":{},"ram_total":{},"uart":{{"rx_bytes":{},"rx_frames":{},"tx_bytes":{},"tx_frames":{},"failed":{},"config":"{} 8N1"}},"mqtt":{{"enabled":{},"state":"{}","client_id":"{}","published":{},"failed":{}}},"http":{{"enabled":{},"state":"{}","sent":{},"failed":{}}},"tcp":{{"enabled":{},"state":"{}","connections":{}}},"gpio":[{},{},{},{}]}}"#,
             env!("CARGO_PKG_VERSION"),
             uptime,
             datetime,
@@ -101,6 +104,7 @@ impl SharedStats {
             config.uart.baudrate,
             config.mqtt.enabled,
             state_str(self.mqtt_state.load(Ordering::Relaxed)),
+            self.mqtt_client_id.lock().unwrap(),
             self.mqtt_published.load(Ordering::Relaxed),
             self.mqtt_failed.load(Ordering::Relaxed),
             config.http.enabled,

@@ -43,18 +43,22 @@ fn try_set_read_timeout(stream: &dyn std::any::Any, timeout: std::time::Duration
     }
 }
 
+/// Timeout cho idle WS connection (không nhận broadcast nào trong 120s → đóng)
+const WS_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 /// Xử lý 1 WebSocket connection (tiny-http đã gửi 101 Upgrade)
 /// Single-thread: luân phiên gửi broadcast data + đọc lệnh từ client
 pub fn handle_websocket<S>(stream: S, manager: Arc<WsManager>)
 where
     S: std::io::Read + std::io::Write + Send + 'static,
 {
-    // Kiểm tra giới hạn kết nối
-    if manager.connections.load(Ordering::Relaxed) >= manager.max_connections {
+    // H6 fix: fetch_add trước, rollback nếu vượt giới hạn (tránh TOCTOU race)
+    let prev = manager.connections.fetch_add(1, Ordering::Relaxed);
+    if prev >= manager.max_connections {
+        manager.connections.fetch_sub(1, Ordering::Relaxed);
         log::warn!("[WS] Từ chối kết nối (đã đạt giới hạn {})", manager.max_connections);
         return;
     }
-    manager.connections.fetch_add(1, Ordering::Relaxed);
 
     // tiny-http đã gửi 101 Upgrade → from_raw_socket (không handshake lại)
     let mut ws: WebSocket<S> = WebSocket::from_raw_socket(
@@ -67,39 +71,51 @@ where
 
     let mut broadcast_rx = manager.broadcast_tx.subscribe();
     let _cmd_tx = manager.cmd_tx.clone();
+    let mut last_activity = std::time::Instant::now();
 
     // Single-thread loop: gửi broadcast trước, rồi thử đọc (non-blocking)
     loop {
+        // Kiểm tra idle timeout
+        if last_activity.elapsed() > WS_IDLE_TIMEOUT {
+            log::info!("[WS] Đóng kết nối do idle timeout");
+            let _ = ws.close(None);
+            break;
+        }
+
         // 1. Gửi tất cả pending broadcast messages
         let mut sent = 0;
+        let mut send_failed = false;
         loop {
             match broadcast_rx.try_recv() {
                 Ok(data) => {
                     if ws.send(Message::Text(data)).is_err() {
-                        manager.connections.fetch_sub(1, Ordering::Relaxed);
-                        log::info!("[WS] Ngắt kết nối (còn: {})", manager.connections.load(Ordering::Relaxed));
-                        return;
+                        send_failed = true;
+                        break;
                     }
                     sent += 1;
+                    last_activity = std::time::Instant::now();
                 }
                 Err(broadcast::error::TryRecvError::Lagged(_)) => {}
                 Err(broadcast::error::TryRecvError::Empty) => break,
                 Err(broadcast::error::TryRecvError::Closed) => {
+                    let _ = ws.close(None);
                     manager.connections.fetch_sub(1, Ordering::Relaxed);
                     return;
                 }
             }
         }
 
-        // 2. Thử đọc từ client (non-blocking check qua can_read)
-        //    Nếu không có broadcast data vừa gửi → sleep ngắn để tránh busy-loop
-        if sent == 0 {
-            // Không có data broadcast → chờ 100ms rồi thử lại
-            std::thread::sleep(std::time::Duration::from_millis(100));
+        // Send fail → client đã disconnect, thoát ngay
+        if send_failed {
+            break;
         }
 
-        // 3. Đọc lệnh từ client (sẽ WouldBlock nếu stream non-blocking)
-        //    Với blocking stream, bỏ qua read — chỉ gửi broadcast
-        //    Client gửi lệnh qua HTTP API thay vì WS nếu cần
+        // 2. Không có broadcast data → sleep ngắn để tránh busy-loop
+        if sent == 0 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
     }
+
+    manager.connections.fetch_sub(1, Ordering::Relaxed);
+    log::info!("[WS] Ngắt kết nối (còn: {})", manager.connections.load(Ordering::Relaxed));
 }

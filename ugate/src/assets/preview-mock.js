@@ -1,0 +1,11 @@
+S.page='config';
+S.config={
+  general:{device_name:'ugate',interval_secs:3,wrap_json:false,data_as_text:true},
+  mqtt:{enabled:true,broker:'broker.emqx.io',port:8883,tls:true,topic:'ugate/data',sub_topic:'ugate/cmd',username:'',password:'',qos:1},
+  http:{enabled:true,url:'http://example.com/api',method:'post'},
+  tcp:{enabled:false,mode:'server',server_port:9000,client_host:'',client_port:9000},
+  uart:{baudrate:115200,data_bits:8,parity:'none',stop_bits:1,frame_mode:'none',frame_length:256,frame_timeout_ms:50,gap_ms:20},
+  web:{port:8888}
+};
+S.status={mqtt:{client_id:'ugate-abc12345'}};
+render();

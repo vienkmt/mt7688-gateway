@@ -1,4 +1,13 @@
 warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
 package:   /Users/phonglinh/mt7688-gateway/ugate/Cargo.toml
 workspace: /Users/phonglinh/mt7688-gateway/Cargo.toml
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+   0.064170875s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint: stale: missing "/Users/phonglinh/mt7688-gateway/vgateway/src/system_info.rs"
+   0.064372459s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint: fingerprint dirty for vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway)/Check { test: false }/TargetInner { name: "vgateway", doc: true, ..: with_path("/Users/phonglinh/mt7688-gateway/vgateway/src/main.rs", Edition2021) }
+   0.064386792s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(MissingFile { path: "/Users/phonglinh/mt7688-gateway/vgateway/src/system_info.rs" }))
+   0.079995792s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint: stale: missing "/Users/phonglinh/mt7688-gateway/vgateway/src/time_sync.rs"
+   0.080880292s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint: fingerprint dirty for vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway)/Check { test: true }/TargetInner { name: "vgateway", doc: true, ..: with_path("/Users/phonglinh/mt7688-gateway/vgateway/src/main.rs", Edition2021) }
+   0.080889375s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(MissingFile { path: "/Users/phonglinh/mt7688-gateway/vgateway/src/time_sync.rs" }))
+    Checking vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway)
+error: could not compile `vgateway` (bin "vgateway" test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `vgateway` (bin "vgateway") due to 1 previous error

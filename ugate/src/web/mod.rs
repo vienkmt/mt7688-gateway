@@ -8,6 +8,8 @@ pub mod netcfg;
 pub mod server;
 pub mod status;
 pub mod wifi;
+pub mod syslog;
+pub mod toolbox;
 pub mod ws;
 
 // --- Shared helpers cho API handlers ---
@@ -21,7 +23,7 @@ pub(crate) fn json_resp(json: &str) -> Resp {
 }
 
 pub(crate) fn json_err(code: u16, msg: &str) -> Resp {
-    tiny_http::Response::from_string(format!(r#"{{"error":"{}"}}"#, msg))
+    tiny_http::Response::from_string(format!(r#"{{"error":"{}"}}"#, json_escape(msg)))
         .with_status_code(code)
         .with_header(
             tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap(),

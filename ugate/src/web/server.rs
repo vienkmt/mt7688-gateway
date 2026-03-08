@@ -11,6 +11,9 @@ use std::sync::Arc;
 /// Static files nhúng trong binary (từ frontend/dist/)
 /// Sẽ được thay bằng include_bytes! sau khi build frontend
 const INDEX_HTML: &str = include_str!("../embedded_index.html");
+const STYLE_CSS: &str = include_str!("../assets/style.css");
+const MODALS_JS: &str = include_str!("../modals/modals-loader.js");
+const MODAL_HELP_DATA_WRAP: &str = include_str!("../modals/help-data-wrap-format.html");
 
 /// Chạy HTTP server (blocking — gọi từ spawn_blocking)
 pub fn run(
@@ -35,8 +38,21 @@ pub fn run(
         let url = request.url().to_string();
         let method = request.method().clone();
 
-        // WebSocket upgrade (không cần auth cho đơn giản)
+        // WebSocket upgrade (yêu cầu auth)
         if url == "/ws" {
+            let cookie = request
+                .headers()
+                .iter()
+                .find(|h| h.field.as_str() == "Cookie" || h.field.as_str() == "cookie")
+                .map(|h| h.value.as_str().to_string());
+            if !session_mgr.check_session(cookie.as_deref()) {
+                let _ = request.respond(
+                    tiny_http::Response::from_string(r#"{"error":"unauthorized"}"#)
+                        .with_status_code(401)
+                        .with_header(content_type_json()),
+                );
+                continue;
+            }
             handle_ws_upgrade(request, &ws_manager);
             continue;
         }
@@ -63,6 +79,18 @@ pub fn run(
             // Static files
             (tiny_http::Method::Get, "/") | (tiny_http::Method::Get, "/index.html") => {
                 tiny_http::Response::from_string(INDEX_HTML)
+                    .with_header(content_type_html())
+            }
+            (tiny_http::Method::Get, "/style.css") => {
+                tiny_http::Response::from_string(STYLE_CSS)
+                    .with_header(content_type_css())
+            }
+            (tiny_http::Method::Get, "/modals.js") => {
+                tiny_http::Response::from_string(MODALS_JS)
+                    .with_header(content_type_js())
+            }
+            (tiny_http::Method::Get, "/modals/help-data-wrap-format") => {
+                tiny_http::Response::from_string(MODAL_HELP_DATA_WRAP)
                     .with_header(content_type_html())
             }
 
@@ -167,6 +195,29 @@ pub fn run(
                 crate::web::netcfg::handle_set_metric(&body)
             }
 
+            // UART TX (gửi serial xuống MCU)
+            (tiny_http::Method::Post, "/api/uart/tx") => {
+                let body = read_body(&mut request);
+                handle_uart_tx(&body, &ws_manager)
+            }
+
+            // Toolbox (network diagnostics)
+            (tiny_http::Method::Post, "/api/toolbox/run") => {
+                let body = read_body(&mut request);
+                crate::web::toolbox::handle_run(&body, &ws_manager)
+            }
+            (tiny_http::Method::Post, "/api/toolbox/stop") => {
+                crate::web::toolbox::handle_stop()
+            }
+
+            // Syslog viewer
+            (tiny_http::Method::Post, "/api/syslog/start") => {
+                crate::web::syslog::handle_start(&ws_manager)
+            }
+            (tiny_http::Method::Post, "/api/syslog/stop") => {
+                crate::web::syslog::handle_stop()
+            }
+
             // Maintenance
             (tiny_http::Method::Get, "/api/version") => {
                 crate::web::maintenance::handle_version()
@@ -246,6 +297,11 @@ fn handle_login(
     state: &AppState,
     session_mgr: &SessionManager,
 ) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
+    // Rate limit: chặn login quá nhanh sau lần fail
+    if !session_mgr.check_rate_limit() {
+        return crate::web::json_err(429, "too many attempts, try later");
+    }
+
     let body = read_body(request);
     let config = state.get();
 
@@ -258,6 +314,7 @@ fn handle_login(
                 tiny_http::Header::from_bytes(&b"Set-Cookie"[..], cookie.as_bytes()).unwrap(),
             )
     } else {
+        session_mgr.record_fail();
         tiny_http::Response::from_string(r#"{"ok":false}"#)
             .with_status_code(401)
             .with_header(content_type_json())
@@ -285,13 +342,14 @@ fn handle_get_config(state: &AppState) -> tiny_http::Response<std::io::Cursor<Ve
         crate::config::HttpMethod::Post => "post",
         crate::config::HttpMethod::Get => "get",
     };
+    use crate::web::json_escape as esc;
     let json = format!(
-        r#"{{"general":{{"device_name":"{}","interval_secs":{}}},"mqtt":{{"enabled":{},"broker":"{}","port":{},"tls":{},"topic":"{}","sub_topic":"{}","client_id":"{}","username":"{}","password":"{}","qos":{}}},"http":{{"enabled":{},"url":"{}","method":"{}"}},"tcp":{{"enabled":{},"mode":"{}","server_port":{},"client_host":"{}","client_port":{}}},"uart":{{"enabled":{},"baudrate":{},"data_bits":{},"parity":"{}","stop_bits":{},"frame_mode":"{}","frame_length":{},"frame_timeout_ms":{},"gap_ms":{}}},"web":{{"port":{}}}}}"#,
-        c.general.device_name, c.general.interval_secs,
-        c.mqtt.enabled, c.mqtt.broker, c.mqtt.port, c.mqtt.tls,
-        c.mqtt.topic, c.mqtt.sub_topic, c.mqtt.client_id, c.mqtt.username, c.mqtt.password, c.mqtt.qos,
-        c.http.enabled, c.http.url, http_method,
-        c.tcp.enabled, tcp_mode, c.tcp.server_port, c.tcp.client_host, c.tcp.client_port,
+        r#"{{"general":{{"device_name":"{}","interval_secs":{},"wrap_json":{},"data_as_text":{}}},"mqtt":{{"enabled":{},"broker":"{}","port":{},"tls":{},"topic":"{}","sub_topic":"{}","username":"{}","password":"{}","qos":{}}},"http":{{"enabled":{},"url":"{}","method":"{}"}},"tcp":{{"enabled":{},"mode":"{}","server_port":{},"client_host":"{}","client_port":{}}},"uart":{{"enabled":{},"baudrate":{},"data_bits":{},"parity":"{}","stop_bits":{},"frame_mode":"{}","frame_length":{},"frame_timeout_ms":{},"gap_ms":{}}},"web":{{"port":{}}}}}"#,
+        esc(&c.general.device_name), c.general.interval_secs, c.general.wrap_json, c.general.data_as_text,
+        c.mqtt.enabled, esc(&c.mqtt.broker), c.mqtt.port, c.mqtt.tls,
+        esc(&c.mqtt.topic), esc(&c.mqtt.sub_topic), esc(&c.mqtt.username), esc(&c.mqtt.password), c.mqtt.qos,
+        c.http.enabled, esc(&c.http.url), http_method,
+        c.tcp.enabled, tcp_mode, c.tcp.server_port, esc(&c.tcp.client_host), c.tcp.client_port,
         c.uart.enabled, c.uart.baudrate, c.uart.data_bits, parity, c.uart.stop_bits, frame_mode,
         c.uart.frame_length, c.uart.frame_timeout_ms, c.uart.gap_ms,
         c.web.port,
@@ -347,6 +405,8 @@ fn handle_set_config(
     if let Some(s) = section_body("general") {
         if let Some(v) = jval(&s, "device_name") { cfg.general.device_name = v; }
         if let Some(v) = jval(&s, "interval_secs").and_then(|v| v.parse().ok()) { cfg.general.interval_secs = v; }
+        if let Some(v) = jbool(&s, "wrap_json") { cfg.general.wrap_json = v; }
+        if let Some(v) = jbool(&s, "data_as_text") { cfg.general.data_as_text = v; }
     }
 
     // MQTT
@@ -357,7 +417,6 @@ fn handle_set_config(
         if let Some(v) = jbool(&s, "tls") { cfg.mqtt.tls = v; }
         if let Some(v) = jval(&s, "topic") { cfg.mqtt.topic = v; }
         if let Some(v) = jval(&s, "sub_topic") { cfg.mqtt.sub_topic = v; }
-        if let Some(v) = jval(&s, "client_id") { cfg.mqtt.client_id = v; }
         if let Some(v) = jval(&s, "username") { cfg.mqtt.username = v; }
         if let Some(v) = jval(&s, "password") { cfg.mqtt.password = v; }
         if let Some(v) = jval(&s, "qos").and_then(|v| v.parse().ok()) { cfg.mqtt.qos = v; }
@@ -500,10 +559,30 @@ fn read_body(request: &mut tiny_http::Request) -> String {
     body
 }
 
+fn handle_uart_tx(
+    body: &str,
+    ws_manager: &WsManager,
+) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
+    let data = match crate::web::jval(body, "data") {
+        Some(d) if !d.is_empty() => d,
+        _ => return crate::web::json_err(400, "missing or empty 'data' field"),
+    };
+    let _ = ws_manager.cmd_tx.send(Command::UartTx { data });
+    crate::web::json_resp(r#"{"ok":true}"#)
+}
+
 fn content_type_json() -> tiny_http::Header {
     tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap()
 }
 
 fn content_type_html() -> tiny_http::Header {
     tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap()
+}
+
+fn content_type_css() -> tiny_http::Header {
+    tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/css; charset=utf-8"[..]).unwrap()
+}
+
+fn content_type_js() -> tiny_http::Header {
+    tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/javascript; charset=utf-8"[..]).unwrap()
 }

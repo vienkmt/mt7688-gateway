@@ -1,13 +1,13 @@
 # System Architecture - ugate IoT Gateway
 
 **Last Updated:** 2026-03-08
-**Version:** 3.0 (Phase 1-6 Complete)
+**Version:** 1.6.0 (Phases 1-9 Complete)
 
 ## Architecture Overview
 
 **ugate** is a hybrid async/sync IoT Gateway for MT7688 that collects binary/text data via UART and fan-outs to MQTT, HTTP, and TCP channels while accepting commands from multiple sources (WebSocket, TCP, MQTT) to drive GPIO and UART TX. The design prioritizes resource efficiency on 64MB RAM using Tokio single-thread async executor with epoll I/O multiplexing.
 
-### High-Level Components (Phase 1-6)
+### High-Level Components (Phase 1-7: WiFi + Network + System Management)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -97,53 +97,189 @@
 
 ## Module Architecture
 
-### 1. HTTP Server & WebSocket (main.rs + web/server.rs + web/ws.rs)
+### 1. HTTP Server & WebSocket (web/server.rs + web/ws.rs + embedded_index.html)
 
-**Purpose:** REST API (config, login, GPIO), WebSocket (real-time logs/stats), static UI
+**Purpose:** REST API (WiFi/Network/System), WebSocket (real-time updates), embedded SPA
 
-**Endpoints:**
+**Key Endpoints (6 tabs in SPA):**
 
-| Endpoint | Method | Purpose | Response | Auth |
-|----------|--------|---------|----------|------|
-| `/` | GET | Index.html (Vue SPA) | HTML | No |
-| `/api/login` | POST | Authenticate, get session | JSON (token) | No |
-| `/api/config` | GET | Get all config | JSON | Yes |
-| `/api/config` | POST | Update config | JSON + save to UCI | Yes |
-| `/api/status` | GET | Real-time stats | JSON | No |
-| `/api/gpio/{pin}` | POST | Control GPIO (set/toggle) | JSON | Yes |
-| `/api/uart/tx` | POST | Send data to UART TX | JSON | Yes |
-| `/ws` | UPGRADE | WebSocket (logs/stats) | Binary frames | No |
+| Tab | Endpoints | Purpose |
+|-----|-----------|---------|
+| **Status** | `/api/status`, `/api/wifi/status` | System info, WiFi signal, channel stats, GPIO |
+| **Communication** | `/api/config` (MQTT/HTTP/TCP) | Config MQTT/HTTP/TCP settings |
+| **UART** | `/api/config` (UART section) | UART baudrate, frame mode, real-time stream (WS) |
+| **Network** | `/api/network`, `/api/ntp`, `/api/wan/discover` | LAN/WAN IP config, NTP servers, timezone |
+| **Routing** | `/api/routes` | Show/add/delete static routes |
+| **System** | `/api/version`, `/api/backup`, `/api/upgrade` | Version, backup/restore, firmware upgrade |
+
+**Auth Endpoints:**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/login` | POST | Get session token (cookie) |
+| `/api/password` | POST | Change password |
 
 **Server Details:**
 - Runtime: Tokio single-thread executor (`#[tokio::main(flavor = "current_thread")]`)
 - HTTP Server: `spawn_blocking(tiny-http::Server::http)`
 - WebSocket: tungstenite in async task, broadcasts UART data & system stats
 - Port: 8888 (configurable via UCI: config.web.port)
-- Static UI: Embedded Vue.js binary in include_str!("embedded_index.html")
-- Auth: Session cookies (1h expiry in RAM), password in config
+- Static UI: Embedded vanilla JavaScript SPA (925 LOC) in include_str!("embedded_index.html")
+  - Asset loading: CSS from `/style.css`, JS modals from `/modals/*.js`, help from `/modals/*.html`
+  - No npm, no build step, no external CDN dependencies
+  - 6 tabs: Status, Communication, UART, Network, Routing, System
+  - Modal dialogs for help, data format reference, system info
+- Auth: Session tokens (32 hex chars, max 4 concurrent, 24h TTL), rate limiting
 
-**Request Handler Flow:**
+**Request Handler Flow (Summary):**
 
-```
-HTTP Request
-    │
-    ▼
-Parse URL + Method
-    │
-    ├─ "/" ──────────────▶ system_info::SystemInfo::collect() ──▶ html_template::render_page()
-    │
-    ├─ "/config" GET ────▶ config::AppState::get() ──▶ html_config::render_config_page()
-    │
-    ├─ "/config" POST ───▶ parse_config_form() ──▶ config::AppState::update() ──▶ html_config::render_config_page()
-    │
-    ├─ "/network" GET ───▶ NetworkConfig::load_from_uci() ──▶ NetworkStatus::get_current() ──▶ html_network::render_network_page()
-    │
-    ├─ "/network" POST ──▶ parse_network_form() ──▶ validate_config() ──▶ save_to_uci() ──▶ html_network::render_network_page()
-    │
-    ├─ "/api/network" GET ──▶ NetworkConfig::load_from_uci() ──▶ format_network_json()
-    │
-    └─ "/api/network" POST ─▶ parse_network_json() ──▶ validate_config() ──▶ save_to_uci() ──▶ format_network_json()
-```
+| Method | Endpoint | Handler | Purpose |
+|--------|----------|---------|---------|
+| GET | / | - | Embedded SPA (925 LOC vanilla JS) |
+| GET | /style.css | - | External CSS stylesheet (asset) |
+| GET | /modals/*.html | - | Modal dialog templates (asset) |
+| GET | /modals/*.js | - | Modal injection system (asset) |
+| POST | /api/login | SessionManager | Authenticate with password, get token |
+| GET | /api/session | SessionManager | Check session validity |
+| GET/POST | /api/wifi/* | wifi module | WiFi modes, scanning, status |
+| GET/POST | /api/network* | netcfg module | LAN/WAN IP, apply/revert |
+| GET/POST | /api/ntp* | netcfg module | NTP servers, timezone, sync |
+| GET/POST | /api/routes* | netcfg module | Static routing |
+| GET/POST | /api/version | maintenance module | Version/build info |
+| GET/POST | /api/backup | maintenance module | Config backup/restore |
+| POST | /api/upgrade* | maintenance module | Local/remote firmware upgrade |
+| GET | /api/status | status module | Real-time stats |
+| GET | /ws | ws module | WebSocket upgrade |
+
+**WebSocket (tungstenite):**
+- Upgrades from tiny-http 101 Upgrade
+- Broadcasts UART frames (capacity 64)
+- Sends system stats every 1s
+- Supports command input (JSON) from client
+- Max 32 concurrent connections (configurable)
+
+### 1.5 WiFi Management (web/wifi.rs - 209 lines)
+
+**Phase 7 Feature: WiFi 4-Mode Configuration**
+
+**Handlers:**
+
+| Endpoint | Function | Purpose |
+|----------|----------|---------|
+| `GET /api/wifi/scan` | `handle_scan()` | Parse `iwinfo phy0-sta0 scan`, extract ESSID/Signal/Encryption |
+| `GET /api/wifi/status` | `handle_status()` | Read UCI disabled flags to detect mode, get STA/AP signal/IP/SSID |
+| `POST /api/wifi/mode` | `handle_set_mode(body)` | Switch 4 modes (STA/AP/STA+AP/Off) by setting UCI disabled flags |
+| `POST /api/wifi/connect` | `handle_connect(body)` | Legacy: manual SSID+password (now use mode endpoint) |
+| `POST /api/wifi/disconnect` | `handle_disconnect()` | Legacy: clear STA SSID (now use mode endpoint) |
+
+**WiFi Mode Mapping (UCI disabled flags):**
+
+| Mode | wwan.disabled | default_radio0.disabled |
+|------|---------------|------------------------|
+| STA | 0 (enabled) | 1 (disabled) |
+| AP | 1 (disabled) | 0 (enabled) |
+| STA+AP | 0 (enabled) | 0 (enabled) |
+| Off | 1 (disabled) | 1 (disabled) |
+
+**UCI Interfaces:**
+- `wireless.wwan` = STA interface (mode=sta, network=wwan)
+- `wireless.default_radio0` = AP interface (mode=ap, network=lan)
+- `wireless.radio0` = Radio config (channel, country=VN, band=2g)
+
+**Helpers:**
+- `set_sta_config(ssid, key, enc)` — Set STA SSID, password, encryption
+- `set_ap_config(ssid, key, channel)` — Set AP SSID, password, channel
+- `parse_signal(s)` — Convert dBm to signal percentage
+- `get_iface_ip(iface)` — Get IP address of interface
+
+**Draft/Apply Pattern:** Changes saved to RAM with `uci set` (no commit), require `/api/network/apply` to persist.
+
+---
+
+### 1.6 Network Configuration (web/netcfg.rs - 350 lines)
+
+**Phase 7 Feature: Complete Network Stack Management**
+
+**Handlers:**
+
+| Endpoint | Function | Purpose |
+|----------|----------|---------|
+| `GET /api/network` | `handle_get_network()` | Get LAN/WAN config (proto, ipaddr, netmask, gateway, metric, dns) |
+| `POST /api/network` | `handle_set_network(body)` | Set LAN/WAN config (DHCP or static) — draft to RAM |
+| `POST /api/network/apply` | `handle_apply()` | Commit `uci commit network/wireless`, reload interfaces smartly |
+| `POST /api/network/revert` | `handle_revert()` | Discard all pending changes (uci revert) |
+| `GET /api/network/changes` | `handle_changes()` | Check if pending changes exist in network/wireless/system |
+| `GET /api/ntp` | `handle_get_ntp()` | Get NTP servers list, timezone, enabled flag |
+| `POST /api/ntp` | `handle_set_ntp(body)` | Set NTP servers + timezone, commit directly (no draft) |
+| `POST /api/ntp/sync` | `handle_ntp_sync()` | Manually trigger time sync (ntpd -q or HTTP Date fallback) |
+| `GET /api/routes` | `handle_get_routes()` | Parse `ip route show`, format as JSON array (dest/via/dev/metric) |
+| `POST /api/routes` | `handle_add_route(body)` | Add static route to UCI, apply with `ip route add` |
+| `DELETE /api/routes/{name}` | `handle_delete_route()` | Delete route from UCI |
+| `GET /api/wan/discover` | `handle_wan_discover()` | Parse `ip route show default`, list available WAN interfaces + metrics |
+| `POST /api/interface/metric` | `handle_set_metric(body)` | Set metric for interface (WAN priority) |
+
+**Network Config Structure:**
+- `network.lan` = LAN bridge (static 192.168.10.1/24 default)
+- `network.wan` = ETH WAN (DHCP or static, metric 100)
+- `network.wwan` = WiFi WAN (DHCP or static, metric 10 — higher priority)
+
+**Smart Apply Mechanism:**
+1. `uci changes network` → diff pending changes
+2. `uci commit network` → persist to /etc/config/network
+3. If wireless changed: `wifi reload` (separate from network)
+4. If network changed: `ubus call network reload` (netifd diff, minimal downtime)
+5. Delay 1s in separate thread to avoid blocking
+
+**Helpers:**
+- `uci_get(key)` — Get single UCI value
+- `netmask_to_cidr(mask)` — Convert netmask to CIDR notation
+- `dev_to_uci(dev)` — Map device name (eth0.2) to UCI section (wan)
+- `json_str_array(list)` — Format string array as JSON ["a","b","c"]
+
+---
+
+### 1.7 System Maintenance (web/maintenance.rs - 362 lines)
+
+**Phase 7 Feature: Firmware Management & Config Backup**
+
+**Handlers:**
+
+| Endpoint | Function | Purpose |
+|----------|----------|---------|
+| `GET /api/version` | `handle_version()` | Return version, build_date, git_commit (compile-time env) |
+| `GET /api/backup` | `handle_backup()` | Stream `/etc/config/ugate` as binary download |
+| `POST /api/restore` | `handle_restore()` | Upload config file, validate UTF-8 + UCI format, restore |
+| `POST /api/factory-reset` | `handle_factory_reset()` | Reset config to defaults, save UCI |
+| `POST /api/restart` | `handle_restart()` | Reboot device (1s delay) |
+| `POST /api/upgrade` (local) | `handle_upgrade_upload()` | Upload IPK file (max 10MB), validate ar archive, install |
+| `GET /api/upgrade/url` | `handle_get_upgrade_url()` | Get remote upgrade URL from UCI |
+| `POST /api/upgrade/url` | `handle_set_upgrade_url()` | Save remote upgrade URL to UCI, commit |
+| `GET /api/upgrade/check` | `handle_upgrade_check()` | Fetch manifest JSON from remote URL, check version/changelog |
+| `POST /api/upgrade/remote` | `handle_upgrade_remote()` | Download IPK from remote, verify SHA256, install, restart |
+
+**Upgrade Flow (Local):**
+1. User selects IPK file
+2. POST to `/api/upgrade` with file body
+3. Validate: check ar archive magic ("!<arch>")
+4. `opkg install --force-reinstall /tmp/ugate-*.ipk`
+5. Guard: `UPGRADING.compare_exchange()` prevents concurrent upgrade
+6. Restart service
+
+**Upgrade Flow (Remote):**
+1. GET `/api/upgrade/check` to fetch manifest
+2. Parse JSON: `{version, changelog, size, url, sha256}`
+3. Compare version vs current
+4. POST `/api/upgrade/remote` → spawn_blocking to:
+   - Download IPK via ureq
+   - Verify SHA256 checksum
+   - `opkg install --force-reinstall`
+5. Restart service
+
+**Backup/Restore:**
+- Backup: Read `/etc/config/ugate` → stream binary
+- Restore: Upload file → validate UTF-8 + contains "config " → backup old → write → reload state
+
+---
 
 ### 2. UART Reader (uart/mod.rs + uart/reader.rs + uart/writer.rs)
 
@@ -200,6 +336,48 @@ config uart 'main'
     option frame_timeout_ms '100'  # for timeout mode: ms
     option gap_ms '10'             # between bytes before EOF
 ```
+
+### 2.5 Session Authentication (web/auth.rs - 141 lines)
+
+**Phase 7 Feature: Token-Based Session Management**
+
+**SessionManager:**
+- Max 4 concurrent sessions
+- Token: 32 hex chars (16 bytes from /dev/urandom)
+- TTL: 24 hours (per-process, tokens discarded on restart)
+- Rate limit: 2s cooldown between failed login attempts
+- Cookie header: `session=<token>`
+
+**Handlers:**
+- `validate_password(body)` — Parse JSON {"password":"..."}, check vs config
+- Tokens stored in VecDeque with expiry timestamp
+- Failed attempt increments cooldown counter
+
+**Security:**
+- Tokens are random, not based on timestamp
+- No persistent session storage (RAM only)
+- Max 4 sessions prevents brute-force bombing
+- Rate limiting (2s) further protects against attacks
+
+---
+
+### 2.6 WebSocket Manager (web/ws.rs - 121 lines)
+
+**Phase 7 Feature: Real-Time Status Streaming**
+
+**WsManager:**
+- Broadcast channel: tokio::sync (capacity 64)
+- Idle timeout: 120s (disconnect inactive clients)
+- Max connections: Configurable (atomic counter)
+
+**Handler:**
+- Accepts WebSocket upgrade from `/ws`
+- Broadcasts UART frames from `uart_broadcast_tx` channel
+- Broadcasts system status every 1s
+- Accepts JSON command input from client
+- Single-thread loop per client (epoll-based)
+
+---
 
 ### 3. Configuration Management (config.rs)
 
@@ -461,44 +639,17 @@ config tcp 'main'
   - MQTT publisher polls config every 2s (cannot use async watch in std::thread)
 - **AsyncFd epoll:** Efficient I/O multiplexing for single-thread executor
 
-### 5. Web UI Architecture
+### 5. Toolbox & Syslog Modules
 
-**HTML Templates:**
+**Toolbox (web/toolbox.rs — 135 LOC):**
+- System commands: reboot, factory reset, shell commands
+- Device diagnostics and debug tools
+- Maintenance operations
 
-| File | Purpose | Route | Dynamic Content |
-|------|---------|-------|-----------------|
-| html_template.rs | Dashboard | GET / | Uptime, CPU%, RAM%, interface stats |
-| html_config.rs | Config form | GET/POST /config | MQTT broker, HTTP URL, UART settings |
-| html_network.rs | Network form | GET/POST /network | WAN IP mode, static fields, live status |
-
-**Template Pattern:**
-
-```rust
-fn render_page(data: &Struct) -> String {
-    format!(r#"<!DOCTYPE html>...{field1}...{field2}..."#,
-        field1 = html_escape(&data.field1),  // Prevent XSS
-        field2 = data.field2,
-    )
-}
-```
-
-**Client-Side Interactivity:**
-
-```html
-<!-- Example: Show/hide static IP fields based on mode selection -->
-<input type="radio" name="mode" value="dhcp" onclick="toggleStatic(false)">
-<input type="radio" name="mode" value="static" onclick="toggleStatic(true)">
-
-<div id="static-fields" style="display:none">
-  <!-- IP, Netmask, Gateway, DNS fields -->
-</div>
-
-<script>
-function toggleStatic(show) {
-  document.getElementById('static-fields').style.display = show ? 'block' : 'none';
-}
-</script>
-```
+**Syslog Viewer (web/syslog.rs — 165 LOC):**
+- View OpenWrt syslog in real-time
+- Log filtering and search
+- Integration with system status
 
 ### 6. UCI Integration (uci.rs)
 
@@ -532,40 +683,24 @@ Rust Code
 - Caller decides to retry, log, or propagate error
 - Network config validation happens **before** UCI calls to minimize failures
 
-## Concurrency Model (v2.0 Hybrid Async/Sync)
+## Concurrency Model
 
-**Task Architecture (v2.0 refactor):**
+**Task Architecture (Hybrid Async/Sync):**
 
-| Task | Spawn Method | Shared State | Channel Type | Why |
-|------|--------------|--------------|--------------|-----|
-| HTTP Server | `spawn_blocking` | Arc<AppState> | - | tiny-http is blocking |
-| UART Reader | `tokio::spawn` | Arc<AppState> | std::mpsc + tokio::mpsc senders | AsyncFd for epoll |
-| MQTT Publisher | `std::thread::spawn` | Arc<AppState> | std::sync::mpsc receiver | rumqttc sync Client on MIPS |
-| HTTP Publisher | `tokio::spawn` | Arc<AppState> | tokio::sync::mpsc receiver | async with spawn_blocking for ureq |
-| OLED Display | `tokio::spawn` | - | - | async display loop |
+| Task | Method | Why |
+|------|--------|-----|
+| HTTP Server | spawn_blocking | tiny-http is blocking |
+| UART Reader | tokio::spawn | AsyncFd/epoll non-blocking |
+| MQTT Publisher | std::thread::spawn | rumqttc sync Client (stable on MIPS) |
+| HTTP Publisher | tokio::spawn | async with spawn_blocking for ureq |
+| TCP Server/Client | tokio::spawn | async I/O |
+| GPIO Heartbeat | tokio::spawn | async task |
+| WebSocket | tokio::spawn | real-time broadcast |
 
-**Config Change Notification:**
-
-| Component | Mechanism | Reason |
-|-----------|-----------|--------|
-| UART Reader | `tokio::sync::watch<()>.changed()` | Async, reconnect on UART settings change |
-| HTTP Publisher | `tokio::sync::watch<()>.changed()` | Async, reload on config change |
-| MQTT Publisher | Polling `state.get()` every 2s | std::thread cannot use async watch |
-
-**AppState Implementation:**
-```rust
-pub struct AppState {
-    config: RwLock<Config>,           // Thread-safe config storage
-    config_tx: watch::Sender<()>,     // Notify-only (no data payload)
-}
-```
-
-**Hybrid Architecture Benefits:**
-- Single-thread Tokio executor (epoll) reduces context switching
-- std::thread for MQTT avoids rumqttc async issues on MIPS
-- RwLock allows concurrent reads, exclusive writes
-- watch<()> is lightweight (no data cloning)
-- std::sync::mpsc for cross-thread communication is simple and reliable
+**Config Changes:**
+- UART/HTTP: `tokio::sync::watch<()>.changed()` in tokio::select!
+- MQTT: Polls state every 2s (can't use async watch in std::thread)
+- AppState: `RwLock<Config>` + `watch::Sender<()>` for notifications
 
 ## Memory & Storage
 
