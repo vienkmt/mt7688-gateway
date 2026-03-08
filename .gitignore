@@ -81,3 +81,4 @@ ugate/src/embedded_index.html
 .repomixignore
 /target
 /target
+/ugate/html-bundle

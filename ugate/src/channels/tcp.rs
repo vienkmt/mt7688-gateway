@@ -17,7 +17,7 @@ pub async fn run_server(
     state: Arc<AppState>,
     uart_rx: broadcast::Receiver<Vec<u8>>,
     cmd_tx: mpsc::Sender<Command>,
-    stats: Arc<crate::web::status::SharedStats>,
+    stats: Arc<crate::web_api::status::SharedStats>,
 ) {
     let mut config_watch = state.subscribe();
     let uart_rx = uart_rx;
@@ -83,7 +83,7 @@ pub async fn run_client(
     state: Arc<AppState>,
     uart_rx: broadcast::Receiver<Vec<u8>>,
     cmd_tx: mpsc::Sender<Command>,
-    stats: Arc<crate::web::status::SharedStats>,
+    stats: Arc<crate::web_api::status::SharedStats>,
 ) {
     let mut reconnector = Reconnector::new(Duration::from_secs(1), Duration::from_secs(60));
     let mut config_watch = state.subscribe();

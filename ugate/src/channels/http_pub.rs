@@ -5,7 +5,7 @@
 
 use crate::commands::Command;
 use crate::config::AppState;
-use crate::web::status::SharedStats;
+use crate::web_api::status::SharedStats;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -76,7 +76,7 @@ async fn run_publish_loop(
                 } else if config.general.data_as_text {
                     // Text mode: thử UTF-8, fallback hex
                     match std::str::from_utf8(&data) {
-                        Ok(s) => format!(r#"{{"data":"{}","len":{}}}"#, crate::web::json_escape(s), data.len()),
+                        Ok(s) => format!(r#"{{"data":"{}","len":{}}}"#, crate::web_api::json_escape(s), data.len()),
                         Err(_) => {
                             let hex: String = data.iter().map(|b| format!("{:02x}", b)).collect();
                             format!(r#"{{"data":"{}","len":{}}}"#, hex, data.len())
@@ -88,12 +88,12 @@ async fn run_publish_loop(
                 };
                 // GET query value: wrapped → parse fields, raw → data field
                 let get_query = if is_wrapped {
-                    let dname = crate::web::jval(&data_str, "device_name").unwrap_or_default();
-                    let ts = crate::web::jval(&data_str, "timestamp").unwrap_or_default();
-                    let dv = crate::web::jval(&data_str, "data").unwrap_or_default();
+                    let dname = crate::web_api::jval(&data_str, "device_name").unwrap_or_default();
+                    let ts = crate::web_api::jval(&data_str, "timestamp").unwrap_or_default();
+                    let dv = crate::web_api::jval(&data_str, "data").unwrap_or_default();
                     format!("device_name={}&timestamp={}&data={}", dname, ts, dv)
                 } else {
-                    let dv = crate::web::jval(&data_str, "data").unwrap_or_default();
+                    let dv = crate::web_api::jval(&data_str, "data").unwrap_or_default();
                     format!("data={}", dv)
                 };
 

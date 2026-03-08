@@ -95,3 +95,37 @@ Ghi chú các lỗi hay gặp khi phát triển firmware Rust cho MIPS embedded.
 - **Fix (MQTT):** Thêm `Arc<AtomicBool>` flag (`io_stop`) + gọi `client.disconnect()` tại mọi return path của `run_publish_loop`. IO thread check flag mỗi vòng lặp → break khi flag = true.
 - **Fix (TCP):** Thêm `watch::Receiver<()>` shutdown signal vào `handle_connection`, `select!` trên `shutdown_rx.changed()`. Server truyền `state.subscribe()` cho mỗi spawned connection. Client tương tự.
 - **Bài học:** Khi spawn thread/task xử lý network I/O, luôn có cơ chế shutdown signal. Đặc biệt `std::thread::spawn` không tự cancel như async task — cần flag hoặc disconnect explicit.
+
+---
+
+## 6. macOS SCP mặc định dùng SFTP — OpenWrt không có sftp-server
+
+- **Triệu chứng:** `scp file root@device:/tmp/` → `ash: /usr/libexec/sftp-server: not found`
+- **Nguyên nhân:** macOS mới (OpenSSH 9+) mặc định dùng SFTP protocol, OpenWrt chỉ có Dropbear SSH (không có `openssh-sftp-server`)
+- **Fix:** Dùng `scp -O` (legacy SCP protocol) thay vì SFTP
+
+---
+
+## 7. macOS bsdtar tạo PaxHeader — busybox tar/opkg không hiểu
+
+- **Triệu chứng:** `opkg install *.ipk` → hàng loạt `Unknown typeflag: 0x78`, `PaxHeader` errors
+- **Nguyên nhân:** macOS bsdtar tự thêm PaxHeader entries (extended attributes, metadata) vào tar archive. busybox tar trên OpenWrt không hỗ trợ PAX format (typeflag `x` = 0x78)
+- **Fix:** Dùng GNU tar (`gtar`) thay vì macOS bsdtar: `brew install gnu-tar`
+- **Lưu ý:** `COPYFILE_DISABLE=1` chỉ tắt `._*` resource fork files, KHÔNG tắt PaxHeader — phải dùng `gtar`
+
+---
+
+## 8. opkg "up to date" khi nhiều IPK file cùng tồn tại
+
+- **Triệu chứng:** `opkg install /tmp/ugate_*.ipk` → `Package ugate installed in root is up to date` hoặc `Multiple packages providing same name`
+- **Nguyên nhân:** Glob `*.ipk` match nhiều file (bản cũ + mới), opkg so sánh version sai
+- **Fix:** Xoá IPK cũ trước khi upload: `rm -f /tmp/ugate_*.ipk`, hoặc chỉ định file chính xác thay vì dùng glob
+
+---
+
+## 9. UCI named section mismatch gây init script không start service
+
+- **Triệu chứng:** `opkg install` thành công nhưng service không chạy, `/etc/init.d/ugate status` → `active with no instances`
+- **Nguyên nhân:** Init script dùng `config_get enabled main enabled 0` nhưng UCI config dùng section name khác (vd: `general`, `ugate`). `config_get` trả default `0` → không start
+- **Fix:** Đồng bộ section name giữa UCI config (`config ugate 'ugate'`) và init script (`config_get enabled ugate enabled 0`)
+- **Bài học:** Luôn test init script sau khi thay đổi UCI config structure. Dùng `uci show <package>` để verify section names

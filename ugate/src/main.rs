@@ -10,7 +10,7 @@ mod gpio;
 mod time_sync;
 mod uart;
 mod uci;
-mod web;
+mod web_api;
 
 use config::{AppState, Config};
 use std::sync::Arc;
@@ -36,7 +36,7 @@ async fn main() {
     let state = Arc::new(AppState::new(config.clone()));
 
     // Bộ đếm thống kê chia sẻ giữa tất cả tasks
-    let stats = Arc::new(web::status::SharedStats::new());
+    let stats = Arc::new(web_api::status::SharedStats::new());
 
     // --- Hạ tầng kênh truyền ---
 
@@ -93,7 +93,7 @@ async fn main() {
     tokio::spawn(gpio::run(config.gpio.clone(), gpio_rx, stats.clone()));
 
     // --- WebSocket manager ---
-    let ws_manager = Arc::new(web::ws::WsManager::new(
+    let ws_manager = Arc::new(web_api::ws::WsManager::new(
         ws_cmd_tx,
         config.web.max_ws_connections,
     ));
@@ -136,7 +136,7 @@ async fn main() {
     });
 
     // --- HTTP server ---
-    let session_mgr = Arc::new(web::auth::SessionManager::new());
+    let session_mgr = Arc::new(web_api::auth::SessionManager::new());
 
     // Status broadcast thread: push trạng thái mỗi 1 giây qua WebSocket
     let ws_broadcast = ws_manager.broadcast_tx.clone();
@@ -186,7 +186,7 @@ async fn main() {
                         // data_as_text: gửi string (UTF-8), ngược lại hex encode
                         let data_str = if cfg.general.data_as_text {
                             match std::str::from_utf8(&data) {
-                                Ok(s) => crate::web::json_escape(s),
+                                Ok(s) => crate::web_api::json_escape(s),
                                 // Fallback hex nếu không phải UTF-8
                                 Err(_) => data.iter().map(|b| format!("{:02x}", b)).collect(),
                             }
@@ -195,7 +195,7 @@ async fn main() {
                         };
                         let json = format!(
                             r#"{{"device_name":"{}","timestamp":{},"data":"{}"}}"#,
-                            crate::web::json_escape(&cfg.general.device_name), ts, data_str
+                            crate::web_api::json_escape(&cfg.general.device_name), ts, data_str
                         );
                         json.into_bytes()
                     } else {
@@ -220,7 +220,7 @@ async fn main() {
     let server_ws = ws_manager.clone();
     let server_session = session_mgr.clone();
     tokio::task::spawn_blocking(move || {
-        web::server::run(server_state, server_ws, server_session);
+        web_api::server::run(server_state, server_ws, server_session);
     });
 
     log::info!("ugate v{} đang chạy (tất cả kênh sẵn sàng)", env!("CARGO_PKG_VERSION"));
@@ -235,7 +235,7 @@ async fn dispatch_command(
     cmd: &commands::Command,
     gpio_tx: &tokio::sync::mpsc::Sender<commands::Command>,
     uart_writer: &mut Option<uart::writer::UartWriter>,
-    stats: &web::status::SharedStats,
+    stats: &web_api::status::SharedStats,
     ws_broadcast: &broadcast::Sender<String>,
 ) {
     match cmd {

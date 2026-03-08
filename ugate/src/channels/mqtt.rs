@@ -16,7 +16,7 @@ pub fn run_sync(
     data_rx: std::sync::mpsc::Receiver<Vec<u8>>,
     config_rx: std::sync::mpsc::Receiver<()>,
     cmd_tx: std::sync::mpsc::Sender<crate::commands::Command>,
-    stats: Arc<crate::web::status::SharedStats>,
+    stats: Arc<crate::web_api::status::SharedStats>,
 ) {
     loop {
         let config = state.get();
@@ -41,7 +41,7 @@ fn run_publish_loop(
     data_rx: &std::sync::mpsc::Receiver<Vec<u8>>,
     config_rx: &std::sync::mpsc::Receiver<()>,
     cmd_tx: &std::sync::mpsc::Sender<crate::commands::Command>,
-    stats: &crate::web::status::SharedStats,
+    stats: &crate::web_api::status::SharedStats,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = state.get();
 

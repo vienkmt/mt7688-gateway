@@ -15,14 +15,14 @@
 - **Multi-channel fan-out:** MQTT (sync), HTTP POST (async), TCP (server/client modes)
 - **Command merge:** Bi-directional control via WebSocket, TCP, and MQTT subscription
 - **GPIO control:** 32+ GPIO lines with configurable modes and timing
-- **Web management UI:** Vanilla JavaScript SPA with 6 tabs (Status, Communication, UART, Network, Routing, System)
+- **Web management UI:** Vue 3 SPA with 9 pages (Status, Communication, UART, Network, Routing, Toolbox, System)
 - **WiFi Management:** 4 modes (STA/AP/STA+AP/Off) with scan, status, and mode switching
 - **Network Configuration:** LAN/WAN, ETH/WiFi interfaces, NTP sync, static routing
 - **System Maintenance:** Backup/restore, factory reset, firmware upgrade (local IPK + remote URL)
 - **Session Authentication:** Token-based (max 4 sessions, 24h TTL, rate-limited)
 - **Offline buffering:** RAM→Disk overflow with disk→RAM priority on reconnect
 - **Flexible configuration:** UCI-based (/etc/config/ugate) with hot-reload and draft/apply pattern
-- **Embedded HTML:** Zero external dependencies for UI (870-line SPA embedded in binary)
+- **Embedded HTML:** Vue 3 SPA built from modular JS files (concatenated at build time, embedded in binary)
 
 **Target Users:**
 - IoT manufacturers integrating MT7688 with Modbus/proprietary MCU protocols
@@ -73,9 +73,10 @@
 - **Command Dispatch:** GPIO set/toggle/pulse via Command enum
 - **Status Tracking:** SharedStats tracks GPIO state and publish counts
 
-### Phase 5: Vanilla JavaScript Frontend
-- **Single-Page App:** Vanilla JavaScript (no framework, no npm)
-- **Pages:** Status, Communication, UART, Network, Routing, System, Help
+### Phase 5: Vue 3 Modular Frontend
+- **Single-Page App:** Vue 3 (CDN-delivered via 00-vue.min.js)
+- **Modular JS:** 10 separate JS files (core, components, 7 pages) concatenated by build.rs
+- **Pages:** Status, Communication, UART, Network, Routing, Toolbox, System, Help
 - **Real-time Updates:** WebSocket for live stats, UART logs
 - **Session Auth:** Token-based (32 hex chars, max 4 concurrent sessions, 24h TTL)
 
@@ -94,7 +95,7 @@
 - **System Maintenance:** Backup/restore UCI config, factory reset, restart
 - **Firmware Upgrade:** Local IPK upload, remote URL with SHA256 verification
 - **Draft/Apply Pattern:** WiFi and network changes saved to RAM, apply commits flash
-- **Embedded SPA:** Vanilla JS with 6 tabs, no external CDN dependencies
+- **Embedded SPA:** Vue 3 with 9 pages, built from modular JS files
 
 ---
 
@@ -107,15 +108,15 @@
 | UART Reader | uart/reader.rs | AsyncFd epoll, frame detection | 233 | Medium |
 | UART Writer | uart/writer.rs | UART TX queue | 73 | Low |
 | Web Server | web/server.rs | tiny-http routing, handlers | 588 | High |
-| WiFi Manager | web/wifi.rs | 4-mode WiFi control, scanning | 209 | Medium |
-| Network Config | web/netcfg.rs | LAN/WAN/NTP/routes (draft/apply) | 350 | High |
-| Auth Manager | web/auth.rs | Session tokens, rate limiting | 141 | Medium |
-| Maintenance | web/maintenance.rs | Backup/restore/upgrade | 362 | Medium |
-| Status Collector | web/status.rs | System stats, channel monitoring | 210 | Low |
-| Syslog Viewer | web/syslog.rs | OpenWrt logging integration | 165 | Low |
-| Toolbox API | web/toolbox.rs | Ping, traceroute, DNS lookup | 135 | Low |
-| WebSocket | web/ws.rs | tungstenite live streaming | 121 | Medium |
-| Web Helpers | web/mod.rs | json_resp, jval, json_escape | 75 | Low |
+| WiFi Manager | web_api/wifi.rs | 4-mode WiFi control, scanning | 209 | Medium |
+| Network Config | web_api/netcfg.rs | LAN/WAN/NTP/routes (draft/apply) | 350 | High |
+| Auth Manager | web_api/auth.rs | Session tokens, rate limiting | 141 | Medium |
+| Maintenance | web_api/maintenance.rs | Backup/restore/upgrade | 362 | Medium |
+| Status Collector | web_api/status.rs | System stats, channel monitoring | 210 | Low |
+| Syslog Viewer | web_api/syslog.rs | OpenWrt logging integration | 165 | Low |
+| Toolbox API | web_api/toolbox.rs | Ping, traceroute, DNS lookup | 135 | Low |
+| WebSocket | web_api/ws.rs | tungstenite live streaming | 121 | Medium |
+| Web Helpers | web_api/mod.rs | json_resp, jval, json_escape | 75 | Low |
 | MQTT Publisher | channels/mqtt.rs | std::thread + rumqttc sync | 202 | Medium |
 | HTTP Publisher | channels/http_pub.rs | spawn_blocking + ureq | 139 | Medium |
 | TCP Channel | channels/tcp.rs | Server/client with reconnect | 195 | High |
@@ -125,9 +126,15 @@
 | GPIO Control | gpio.rs | chardev ioctl, LED heartbeat | 171 | Medium |
 | Time Sync | time_sync.rs | HTTP-based NTP | 83 | Low |
 | Commands | commands.rs | Command enum, parsing | 139 | Low |
-| Embedded SPA | embedded_index.html | Vanilla JS UI | 925 | Medium |
-| Asset Pipeline | assets/ | CSS, JS modules, preview | 174 | Low |
-| Modal System | modals/ | Help dialogs, loader | 56 | Low |
+| Frontend Build | build.rs | Concatenate JS modules → HTML | - | Medium |
+| HTML Template | frontend/index-template.html | Base HTML + Vue app | - | Low |
+| Vue 3 Library | frontend/js/00-vue.min.js | Vue 3 CDN library | - | - |
+| Core Helpers | frontend/js/01-core.js | API client, utilities | - | Medium |
+| Vue Components | frontend/js/02-components.js | Reusable Vue components | - | Low |
+| Page Components | frontend/js/03-09-page-*.js | 7 pages (Status, Channels, UART, Network, Routing, Toolbox, System) | ~350 | Medium |
+| App Init | frontend/js/10-app.js | Vue app creation, routing | - | Low |
+| CSS Styling | frontend/css/style.css | Responsive mobile-first CSS | 132 | Low |
+| Modal System | frontend/modals/ | Help dialogs, loader | 56 | Low |
 
 ---
 

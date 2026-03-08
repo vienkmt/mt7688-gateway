@@ -2,7 +2,7 @@
 //! LAN/WAN config, NTP settings, routing, interface metrics
 
 use crate::uci::Uci;
-use crate::web::{is_safe_identifier, is_valid_ipv4, json_err, json_resp, jval, Resp};
+use crate::web_api::{is_safe_identifier, is_valid_ipv4, json_err, json_resp, jval, Resp};
 use std::process::Command;
 
 /// GET /api/network — lấy config LAN/WAN
@@ -220,9 +220,9 @@ pub fn handle_get_routes() -> Resp {
             .unwrap_or(&"-");
         routes.push(format!(
             r#"{{"dest":"{}","via":"{}","dev":"{}","metric":"{}","scope":"{}"}}"#,
-            crate::web::json_escape(dest),
-            crate::web::json_escape(gateway),
-            crate::web::json_escape(dev),
+            crate::web_api::json_escape(dest),
+            crate::web_api::json_escape(gateway),
+            crate::web_api::json_escape(dev),
             metric,
             scope,
         ));
@@ -295,8 +295,8 @@ pub fn handle_wan_discover() -> Resp {
         let uci_metric = uci_get(&format!("network.{}.metric", uci_name));
         ifaces.push(format!(
             r#"{{"dev":"{}","uci":"{}","label":"{}","gateway":"{}","metric":"{}","uci_metric":"{}"}}"#,
-            crate::web::json_escape(dev), uci_name,
-            label, crate::web::json_escape(via),
+            crate::web_api::json_escape(dev), uci_name,
+            label, crate::web_api::json_escape(via),
             metric, uci_metric,
         ));
     }

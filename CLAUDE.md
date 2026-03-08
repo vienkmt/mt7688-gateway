@@ -90,4 +90,4 @@ Tất cả docs nằm trong `./docs/`:
 **Hardware/Platform (docs/other-docs/):**
 - OLED, I2C, GPIO guides, MIPS build notes, OpenWrt config
 
-**MIPS/Rust bugs:** `./mips-rust-notes/bugs-and-gotchas.md`
+**MIPS/Rust bugs:** `./docs/mips-rust-bugs-and-gotchas.md`

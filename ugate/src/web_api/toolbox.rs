@@ -1,7 +1,7 @@
 //! Toolbox: network diagnostic tools (ping, traceroute, nslookup)
 //! Stream output via WS broadcast channel
 
-use crate::web::ws::WsManager;
+use crate::web_api::ws::WsManager;
 use std::io::BufRead;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,12 +25,12 @@ fn is_safe_target(s: &str) -> bool {
 
 /// POST /api/toolbox/run — start a diagnostic tool
 pub fn handle_run(body: &str, ws_manager: &Arc<WsManager>) -> super::Resp {
-    let tool = crate::web::jval(body, "tool").unwrap_or_default();
-    let target = crate::web::jval(body, "target").unwrap_or_default();
+    let tool = crate::web_api::jval(body, "tool").unwrap_or_default();
+    let target = crate::web_api::jval(body, "target").unwrap_or_default();
 
     // Validate target first (before building args)
     if !is_safe_target(&target) {
-        return crate::web::json_err(400, "invalid target");
+        return crate::web_api::json_err(400, "invalid target");
     }
 
     // Validate tool and build args
@@ -38,12 +38,12 @@ pub fn handle_run(body: &str, ws_manager: &Arc<WsManager>) -> super::Resp {
         "ping" => ("ping", vec!["-c", "10", &target]),
         "traceroute" => ("traceroute", vec!["-m", "20", &target]),
         "nslookup" => ("nslookup", vec![&target, "8.8.8.8"]),
-        _ => return crate::web::json_err(400, "invalid tool"),
+        _ => return crate::web_api::json_err(400, "invalid tool"),
     };
 
     // Only 1 tool at a time
     if RUNNING.swap(true, Ordering::SeqCst) {
-        return crate::web::json_err(409, "a tool is already running");
+        return crate::web_api::json_err(409, "a tool is already running");
     }
     STOP.store(false, Ordering::SeqCst);
 
@@ -55,13 +55,13 @@ pub fn handle_run(body: &str, ws_manager: &Arc<WsManager>) -> super::Resp {
         run_tool(&cmd_owned, &args_owned, &broadcast_tx);
     });
 
-    crate::web::json_resp(&format!(r#"{{"ok":true,"tool":"{}"}}"#, tool))
+    crate::web_api::json_resp(&format!(r#"{{"ok":true,"tool":"{}"}}"#, tool))
 }
 
 /// POST /api/toolbox/stop — kill running tool
 pub fn handle_stop() -> super::Resp {
     STOP.store(true, Ordering::SeqCst);
-    crate::web::json_resp(r#"{"ok":true}"#)
+    crate::web_api::json_resp(r#"{"ok":true}"#)
 }
 
 /// Run tool process, stream stdout line-by-line via broadcast
@@ -77,7 +77,7 @@ fn run_tool(cmd: &str, args: &[String], broadcast_tx: &tokio::sync::broadcast::S
         Err(e) => {
             let msg = format!(
                 r#"{{"type":"toolbox","line":"Error: {}"}}"#,
-                crate::web::json_escape(&e.to_string())
+                crate::web_api::json_escape(&e.to_string())
             );
             let _ = broadcast_tx.send(msg);
             let _ = broadcast_tx.send(r#"{"type":"toolbox","done":true,"code":-1}"#.to_string());
@@ -104,7 +104,7 @@ fn run_tool(cmd: &str, args: &[String], broadcast_tx: &tokio::sync::broadcast::S
             if let Ok(line) = line {
                 let msg = format!(
                     r#"{{"type":"toolbox","line":"{}"}}"#,
-                    crate::web::json_escape(&line)
+                    crate::web_api::json_escape(&line)
                 );
                 let _ = broadcast_tx.send(msg);
                 lines += 1;
@@ -119,7 +119,7 @@ fn run_tool(cmd: &str, args: &[String], broadcast_tx: &tokio::sync::broadcast::S
             if let Ok(line) = line {
                 let msg = format!(
                     r#"{{"type":"toolbox","line":"{}"}}"#,
-                    crate::web::json_escape(&line)
+                    crate::web_api::json_escape(&line)
                 );
                 let _ = broadcast_tx.send(msg);
             }

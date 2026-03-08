@@ -1,13 +1,55 @@
 warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
 package:   /Users/phonglinh/mt7688-gateway/ugate/Cargo.toml
 workspace: /Users/phonglinh/mt7688-gateway/Cargo.toml
-   0.064170875s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint: stale: missing "/Users/phonglinh/mt7688-gateway/vgateway/src/system_info.rs"
-   0.064372459s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint: fingerprint dirty for vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway)/Check { test: false }/TargetInner { name: "vgateway", doc: true, ..: with_path("/Users/phonglinh/mt7688-gateway/vgateway/src/main.rs", Edition2021) }
-   0.064386792s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(MissingFile { path: "/Users/phonglinh/mt7688-gateway/vgateway/src/system_info.rs" }))
-   0.079995792s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint: stale: missing "/Users/phonglinh/mt7688-gateway/vgateway/src/time_sync.rs"
-   0.080880292s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint: fingerprint dirty for vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway)/Check { test: true }/TargetInner { name: "vgateway", doc: true, ..: with_path("/Users/phonglinh/mt7688-gateway/vgateway/src/main.rs", Edition2021) }
-   0.080889375s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(MissingFile { path: "/Users/phonglinh/mt7688-gateway/vgateway/src/time_sync.rs" }))
+   0.074197167s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint: fingerprint error for vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway)/Check { test: false }/TargetInner { name: "vgateway", doc: true, ..: with_path("/Users/phonglinh/mt7688-gateway/vgateway/src/main.rs", Edition2021) }
+   0.074221542s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/phonglinh/mt7688-gateway/target/debug/.fingerprint/vgateway-4d2c428e6797d1dc/bin-vgateway`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.077801334s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint: fingerprint error for vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway)/Check { test: true }/TargetInner { name: "vgateway", doc: true, ..: with_path("/Users/phonglinh/mt7688-gateway/vgateway/src/main.rs", Edition2021) }
+   0.077811459s  INFO prepare_target{force=false package_id=vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway) target="vgateway"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/phonglinh/mt7688-gateway/target/debug/.fingerprint/vgateway-2fa5cb41d82bc23b/test-bin-vgateway`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
     Checking vgateway v0.2.0 (/Users/phonglinh/mt7688-gateway/vgateway)
-error: could not compile `vgateway` (bin "vgateway" test) due to 1 previous error
-warning: build failed, waiting for other jobs to finish...
 error: could not compile `vgateway` (bin "vgateway") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `vgateway` (bin "vgateway" test) due to 1 previous error

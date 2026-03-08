@@ -13,7 +13,7 @@ use tokio::sync::broadcast;
 pub async fn run(
     state: Arc<AppState>,
     broadcast_tx: broadcast::Sender<Vec<u8>>,
-    stats: Arc<crate::web::status::SharedStats>,
+    stats: Arc<crate::web_api::status::SharedStats>,
 ) {
     let mut retry_secs = 5u64;
     loop {
@@ -37,7 +37,7 @@ pub async fn run(
 async fn run_read_loop(
     state: &AppState,
     broadcast_tx: &broadcast::Sender<Vec<u8>>,
-    stats: &crate::web::status::SharedStats,
+    stats: &crate::web_api::status::SharedStats,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = state.get();
     let mut config_rx = state.subscribe();

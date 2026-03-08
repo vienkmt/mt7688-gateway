@@ -4,16 +4,17 @@
 
 use crate::commands::Command;
 use crate::config::AppState;
-use crate::web::auth::SessionManager;
-use crate::web::ws::{self, WsManager};
+use crate::web_api::auth::SessionManager;
+use crate::web_api::ws::{self, WsManager};
 use std::sync::Arc;
 
 /// Static files nhúng trong binary (từ frontend/dist/)
 /// Sẽ được thay bằng include_bytes! sau khi build frontend
-const INDEX_HTML: &str = include_str!("../embedded_index.html");
-const STYLE_CSS: &str = include_str!("../assets/style.css");
-const MODALS_JS: &str = include_str!("../modals/modals-loader.js");
-const MODAL_HELP_DATA_WRAP: &str = include_str!("../modals/help-data-wrap-format.html");
+const INDEX_HTML: &str = include_str!("../../html-bundle/embedded_index.html");
+const VUE_JS: &str = include_str!("../../frontend/js/00-vue.min.js");
+const STYLE_CSS: &str = include_str!("../../frontend/css/style.css");
+const MODALS_JS: &str = include_str!("../../frontend/modals/modals-loader.js");
+const MODAL_HELP_DATA_WRAP: &str = include_str!("../../frontend/modals/help-data-wrap-format.html");
 
 /// Chạy HTTP server (blocking — gọi từ spawn_blocking)
 pub fn run(
@@ -85,6 +86,10 @@ pub fn run(
                 tiny_http::Response::from_string(STYLE_CSS)
                     .with_header(content_type_css())
             }
+            (tiny_http::Method::Get, "/vue.js") => {
+                tiny_http::Response::from_string(VUE_JS)
+                    .with_header(content_type_js())
+            }
             (tiny_http::Method::Get, "/modals.js") => {
                 tiny_http::Response::from_string(MODALS_JS)
                     .with_header(content_type_js())
@@ -124,75 +129,75 @@ pub fn run(
 
             // WiFi
             (tiny_http::Method::Get, "/api/wifi/scan") => {
-                crate::web::wifi::handle_scan()
+                crate::web_api::wifi::handle_scan()
             }
             (tiny_http::Method::Get, "/api/wifi/status") => {
-                crate::web::wifi::handle_status()
+                crate::web_api::wifi::handle_status()
             }
             (tiny_http::Method::Post, "/api/wifi/connect") => {
                 let body = read_body(&mut request);
-                crate::web::wifi::handle_connect(&body)
+                crate::web_api::wifi::handle_connect(&body)
             }
             (tiny_http::Method::Post, "/api/wifi/disconnect") => {
-                crate::web::wifi::handle_disconnect()
+                crate::web_api::wifi::handle_disconnect()
             }
             (tiny_http::Method::Post, "/api/wifi/mode") => {
                 let body = read_body(&mut request);
-                crate::web::wifi::handle_set_mode(&body)
+                crate::web_api::wifi::handle_set_mode(&body)
             }
 
             // Network config (LAN/WAN)
             (tiny_http::Method::Get, "/api/network") => {
-                crate::web::netcfg::handle_get_network()
+                crate::web_api::netcfg::handle_get_network()
             }
             (tiny_http::Method::Post, "/api/network") => {
                 let body = read_body(&mut request);
-                crate::web::netcfg::handle_set_network(&body)
+                crate::web_api::netcfg::handle_set_network(&body)
             }
             (tiny_http::Method::Post, "/api/network/apply") => {
-                crate::web::netcfg::handle_apply()
+                crate::web_api::netcfg::handle_apply()
             }
             (tiny_http::Method::Post, "/api/network/revert") => {
-                crate::web::netcfg::handle_revert()
+                crate::web_api::netcfg::handle_revert()
             }
             (tiny_http::Method::Get, "/api/network/changes") => {
-                crate::web::netcfg::handle_changes()
+                crate::web_api::netcfg::handle_changes()
             }
 
             // NTP
             (tiny_http::Method::Get, "/api/ntp") => {
-                crate::web::netcfg::handle_get_ntp()
+                crate::web_api::netcfg::handle_get_ntp()
             }
             (tiny_http::Method::Post, "/api/ntp/sync") => {
-                crate::web::netcfg::handle_ntp_sync()
+                crate::web_api::netcfg::handle_ntp_sync()
             }
             (tiny_http::Method::Post, "/api/ntp") => {
                 let body = read_body(&mut request);
-                crate::web::netcfg::handle_set_ntp(&body)
+                crate::web_api::netcfg::handle_set_ntp(&body)
             }
 
             // Routes
             (tiny_http::Method::Get, "/api/routes") => {
-                crate::web::netcfg::handle_get_routes()
+                crate::web_api::netcfg::handle_get_routes()
             }
             (tiny_http::Method::Post, "/api/routes") => {
                 let body = read_body(&mut request);
-                crate::web::netcfg::handle_add_route(&body)
+                crate::web_api::netcfg::handle_add_route(&body)
             }
             (tiny_http::Method::Delete, path) if path.starts_with("/api/routes/") => {
                 let name = path.trim_start_matches("/api/routes/");
-                crate::web::netcfg::handle_delete_route(name)
+                crate::web_api::netcfg::handle_delete_route(name)
             }
 
             // WAN discovery
             (tiny_http::Method::Get, "/api/wan/discover") => {
-                crate::web::netcfg::handle_wan_discover()
+                crate::web_api::netcfg::handle_wan_discover()
             }
 
             // Interface metric
             (tiny_http::Method::Post, "/api/interface/metric") => {
                 let body = read_body(&mut request);
-                crate::web::netcfg::handle_set_metric(&body)
+                crate::web_api::netcfg::handle_set_metric(&body)
             }
 
             // UART TX (gửi serial xuống MCU)
@@ -204,51 +209,51 @@ pub fn run(
             // Toolbox (network diagnostics)
             (tiny_http::Method::Post, "/api/toolbox/run") => {
                 let body = read_body(&mut request);
-                crate::web::toolbox::handle_run(&body, &ws_manager)
+                crate::web_api::toolbox::handle_run(&body, &ws_manager)
             }
             (tiny_http::Method::Post, "/api/toolbox/stop") => {
-                crate::web::toolbox::handle_stop()
+                crate::web_api::toolbox::handle_stop()
             }
 
             // Syslog viewer
             (tiny_http::Method::Post, "/api/syslog/start") => {
-                crate::web::syslog::handle_start(&ws_manager)
+                crate::web_api::syslog::handle_start(&ws_manager)
             }
             (tiny_http::Method::Post, "/api/syslog/stop") => {
-                crate::web::syslog::handle_stop()
+                crate::web_api::syslog::handle_stop()
             }
 
             // Maintenance
             (tiny_http::Method::Get, "/api/version") => {
-                crate::web::maintenance::handle_version()
+                crate::web_api::maintenance::handle_version()
             }
             (tiny_http::Method::Get, "/api/backup") => {
-                crate::web::maintenance::handle_backup()
+                crate::web_api::maintenance::handle_backup()
             }
             (tiny_http::Method::Post, "/api/restore") => {
-                crate::web::maintenance::handle_restore(&mut request, &state)
+                crate::web_api::maintenance::handle_restore(&mut request, &state)
             }
             (tiny_http::Method::Post, "/api/factory-reset") => {
-                crate::web::maintenance::handle_factory_reset(&state)
+                crate::web_api::maintenance::handle_factory_reset(&state)
             }
             (tiny_http::Method::Post, "/api/restart") => {
-                crate::web::maintenance::handle_restart()
+                crate::web_api::maintenance::handle_restart()
             }
             (tiny_http::Method::Post, "/api/upgrade") => {
-                crate::web::maintenance::handle_upgrade_upload(&mut request)
+                crate::web_api::maintenance::handle_upgrade_upload(&mut request)
             }
             (tiny_http::Method::Get, "/api/upgrade/url") => {
-                crate::web::maintenance::handle_get_upgrade_url()
+                crate::web_api::maintenance::handle_get_upgrade_url()
             }
             (tiny_http::Method::Post, "/api/upgrade/url") => {
                 let body = read_body(&mut request);
-                crate::web::maintenance::handle_set_upgrade_url(&body)
+                crate::web_api::maintenance::handle_set_upgrade_url(&body)
             }
             (tiny_http::Method::Get, "/api/upgrade/check") => {
-                crate::web::maintenance::handle_upgrade_check()
+                crate::web_api::maintenance::handle_upgrade_check()
             }
             (tiny_http::Method::Post, "/api/upgrade/remote") => {
-                crate::web::maintenance::handle_upgrade_remote()
+                crate::web_api::maintenance::handle_upgrade_remote()
             }
 
             _ => {
@@ -299,13 +304,13 @@ fn handle_login(
 ) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
     // Rate limit: chặn login quá nhanh sau lần fail
     if !session_mgr.check_rate_limit() {
-        return crate::web::json_err(429, "too many attempts, try later");
+        return crate::web_api::json_err(429, "too many attempts, try later");
     }
 
     let body = read_body(request);
     let config = state.get();
 
-    if crate::web::auth::validate_password(&body, &config.web.password) {
+    if crate::web_api::auth::validate_password(&body, &config.web.password) {
         let token = session_mgr.create_session();
         let cookie = format!("session={}; Path=/; HttpOnly", token);
         tiny_http::Response::from_string(r#"{"ok":true}"#)
@@ -342,7 +347,7 @@ fn handle_get_config(state: &AppState) -> tiny_http::Response<std::io::Cursor<Ve
         crate::config::HttpMethod::Post => "post",
         crate::config::HttpMethod::Get => "get",
     };
-    use crate::web::json_escape as esc;
+    use crate::web_api::json_escape as esc;
     let json = format!(
         r#"{{"general":{{"device_name":"{}","interval_secs":{},"wrap_json":{},"data_as_text":{}}},"mqtt":{{"enabled":{},"broker":"{}","port":{},"tls":{},"topic":"{}","sub_topic":"{}","username":"{}","password":"{}","qos":{}}},"http":{{"enabled":{},"url":"{}","method":"{}"}},"tcp":{{"enabled":{},"mode":"{}","server_port":{},"client_host":"{}","client_port":{}}},"uart":{{"enabled":{},"baudrate":{},"data_bits":{},"parity":"{}","stop_bits":{},"frame_mode":"{}","frame_length":{},"frame_timeout_ms":{},"gap_ms":{}}},"web":{{"port":{}}}}}"#,
         esc(&c.general.device_name), c.general.interval_secs, c.general.wrap_json, c.general.data_as_text,
@@ -525,17 +530,17 @@ fn handle_change_password(
     state: &AppState,
 ) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
     let body = read_body(request);
-    let old_pw = crate::web::jval(&body, "old_password").unwrap_or_default();
-    let new_pw = crate::web::jval(&body, "new_password").unwrap_or_default();
+    let old_pw = crate::web_api::jval(&body, "old_password").unwrap_or_default();
+    let new_pw = crate::web_api::jval(&body, "new_password").unwrap_or_default();
 
     if new_pw.is_empty() || new_pw.len() < 4 {
-        return crate::web::json_err(400, "password must be at least 4 characters");
+        return crate::web_api::json_err(400, "password must be at least 4 characters");
     }
 
     // Verify old password
     let cfg = state.get();
     if old_pw != cfg.web.password {
-        return crate::web::json_err(401, "wrong current password");
+        return crate::web_api::json_err(401, "wrong current password");
     }
 
     // Save new password to UCI
@@ -548,7 +553,7 @@ fn handle_change_password(
     state.update(new_cfg);
 
     log::info!("[HTTP] Password changed");
-    crate::web::json_resp(r#"{"ok":true}"#)
+    crate::web_api::json_resp(r#"{"ok":true}"#)
 }
 
 fn read_body(request: &mut tiny_http::Request) -> String {
@@ -563,12 +568,12 @@ fn handle_uart_tx(
     body: &str,
     ws_manager: &WsManager,
 ) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
-    let data = match crate::web::jval(body, "data") {
+    let data = match crate::web_api::jval(body, "data") {
         Some(d) if !d.is_empty() => d,
-        _ => return crate::web::json_err(400, "missing or empty 'data' field"),
+        _ => return crate::web_api::json_err(400, "missing or empty 'data' field"),
     };
     let _ = ws_manager.cmd_tx.send(Command::UartTx { data });
-    crate::web::json_resp(r#"{"ok":true}"#)
+    crate::web_api::json_resp(r#"{"ok":true}"#)
 }
 
 fn content_type_json() -> tiny_http::Header {

@@ -3,7 +3,7 @@
 //! UCI wifi-iface: 'wwan' = STA, 'default_radio0' = AP
 
 use crate::uci::Uci;
-use crate::web::{json_err, json_escape, json_resp, jval, Resp};
+use crate::web_api::{json_err, json_escape, json_resp, jval, Resp};
 use std::process::Command;
 
 /// GET /api/wifi/scan

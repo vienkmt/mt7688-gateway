@@ -130,9 +130,10 @@ app.component('config-page', {
 - ~30% less code for same UI
 
 ## Status
-- [ ] Phase 1: Setup Vue + Core
-- [ ] Phase 2: Status + Config
-- [ ] Phase 3: UART
-- [ ] Phase 4: Network
-- [ ] Phase 5: Routing + Toolbox + System
-- [ ] Phase 6: Cleanup & deploy test
+- [x] Phase 1: Setup Vue + Core (00-vue.min.js, 01-core.js, 02-components.js, 10-app.js)
+- [x] Phase 2: Status + Config (03-page-status.js, 04-page-config.js)
+- [x] Phase 3: UART (05-page-uart.js)
+- [x] Phase 4: Network (06-page-network.js)
+- [x] Phase 5: Routing + Toolbox + System (07, 08, 09)
+- [x] Phase 6: Cleanup — old h()/helpers removed, build.rs updated
+- [ ] Deploy test on device

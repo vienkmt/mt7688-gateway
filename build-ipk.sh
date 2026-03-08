@@ -25,7 +25,7 @@ set -e  # Dừng ngay nếu bất kỳ lệnh nào lỗi
 # ============================================
 # Đổi version khi release mới (phải khớp với Cargo.toml)
 PKG_NAME="ugate"
-PKG_VERSION="0.1.0"
+PKG_VERSION="2.2.0"
 PKG_RELEASE="1"              # Số lần release cùng version (tăng khi fix packaging)
 PKG_ARCH="mipsel_24kc"       # Kiến trúc CPU của MT7628 (MIPS little-endian, 24KEc core)
 
@@ -155,7 +155,7 @@ chmod 755 "$IPK_DIR/CONTROL/prerm"
 # Khi upgrade, file này KHÔNG bị ghi đè (nhờ conffiles ở bước 4)
 echo ">>> [7/9] Tạo UCI config mặc định..."
 cat > "$IPK_DIR/etc/config/ugate" << EOF
-config ugate 'main'
+config ugate 'ugate'
     option enabled '1'
 
 config uart 'uart'
@@ -215,10 +215,9 @@ USE_PROCD=1
 PROG=/usr/bin/ugate
 
 start_service() {
-    # Đọc config từ UCI, chỉ start nếu enabled=1
     local enabled
     config_load ugate
-    config_get enabled main enabled 0
+    config_get enabled ugate enabled 0
 
     [ "$enabled" = "1" ] || return 0
 
@@ -255,18 +254,25 @@ echo ">>> [9/9] Đóng gói IPK..."
 cd "$BUILD_DIR"
 echo "2.0" > debian-binary
 
+# Dùng GNU tar (gtar) — macOS bsdtar tạo PaxHeader gây lỗi trên busybox/opkg
+TAR="gtar"
+if ! command -v "$TAR" &>/dev/null; then
+    echo "Lỗi: cần GNU tar (gtar). Cài: brew install gnu-tar"
+    exit 1
+fi
+
 # Nén metadata + scripts
 cd "$IPK_DIR/CONTROL"
-tar czf "$BUILD_DIR/control.tar.gz" ./*
+"$TAR" -czf "$BUILD_DIR/control.tar.gz" ./*
 
 # Nén các file cài đặt (binary + config + init script)
 cd "$IPK_DIR"
-tar czf "$BUILD_DIR/data.tar.gz" ./usr ./etc
+"$TAR" -czf "$BUILD_DIR/data.tar.gz" ./usr ./etc
 
 # Gộp 3 thành phần thành file .ipk
 cd "$BUILD_DIR"
 IPK_FILE="$OUTPUT_DIR/${PKG_NAME}_${PKG_VERSION}-${PKG_RELEASE}_${PKG_ARCH}.ipk"
-tar czf "$IPK_FILE" ./debian-binary ./control.tar.gz ./data.tar.gz
+"$TAR" -czf "$IPK_FILE" ./debian-binary ./control.tar.gz ./data.tar.gz
 
 # ============================================
 # HOÀN TẤT
@@ -277,8 +283,13 @@ echo "File: $IPK_FILE"
 echo "Size: $(du -h "$IPK_FILE" | cut -f1)"
 echo ""
 echo "Cài đặt lên thiết bị:"
-echo "  scp $IPK_FILE root@192.168.2.171:/tmp/"
-echo "  ssh root@192.168.2.171 'opkg install /tmp/${PKG_NAME}_*.ipk'"
+echo ""
+echo "  Cách 1 - Upload từ máy dev:"
+echo "    scp -O $IPK_FILE root@192.168.2.171:/tmp/"
+echo "    ssh root@192.168.2.171 'opkg install /tmp/${PKG_NAME}_*.ipk && rm -f /tmp/${PKG_NAME}_*.ipk'"
+echo ""
+echo "  Cách 2 - Download từ server (OTA):"
+echo "    ssh root@192.168.2.171 'opkg install http://your-server/${PKG_NAME}_${PKG_VERSION}-${PKG_RELEASE}_${PKG_ARCH}.ipk && rm -f /tmp/${PKG_NAME}_*.ipk'"
 echo ""
 echo "Các lệnh hữu ích sau khi cài:"
 echo "  /etc/init.d/ugate status     # Kiểm tra trạng thái"

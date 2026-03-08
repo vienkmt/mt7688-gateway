@@ -97,19 +97,20 @@
 
 ## Module Architecture
 
-### 1. HTTP Server & WebSocket (web/server.rs + web/ws.rs + embedded_index.html)
+### 1. HTTP Server & WebSocket (web_api/server.rs + web_api/ws.rs + embedded HTML)
 
-**Purpose:** REST API (WiFi/Network/System), WebSocket (real-time updates), embedded SPA
+**Purpose:** REST API (WiFi/Network/System), WebSocket (real-time updates), embedded Vue 3 SPA
 
-**Key Endpoints (6 tabs in SPA):**
+**Key Endpoints (9 pages in Vue 3 SPA):**
 
-| Tab | Endpoints | Purpose |
-|-----|-----------|---------|
+| Page | Endpoints | Purpose |
+|------|-----------|---------|
 | **Status** | `/api/status`, `/api/wifi/status` | System info, WiFi signal, channel stats, GPIO |
 | **Communication** | `/api/config` (MQTT/HTTP/TCP) | Config MQTT/HTTP/TCP settings |
 | **UART** | `/api/config` (UART section) | UART baudrate, frame mode, real-time stream (WS) |
 | **Network** | `/api/network`, `/api/ntp`, `/api/wan/discover` | LAN/WAN IP config, NTP servers, timezone |
 | **Routing** | `/api/routes` | Show/add/delete static routes |
+| **Toolbox** | `/api/toolbox` | System diagnostics (ping, nslookup, etc.) |
 | **System** | `/api/version`, `/api/backup`, `/api/upgrade` | Version, backup/restore, firmware upgrade |
 
 **Auth Endpoints:**
@@ -124,21 +125,20 @@
 - HTTP Server: `spawn_blocking(tiny-http::Server::http)`
 - WebSocket: tungstenite in async task, broadcasts UART data & system stats
 - Port: 8888 (configurable via UCI: config.web.port)
-- Static UI: Embedded vanilla JavaScript SPA (925 LOC) in include_str!("embedded_index.html")
-  - Asset loading: CSS from `/style.css`, JS modals from `/modals/*.js`, help from `/modals/*.html`
-  - No npm, no build step, no external CDN dependencies
-  - 6 tabs: Status, Communication, UART, Network, Routing, System
+- Frontend: Embedded Vue 3 SPA (built from 10 modular JS files + HTML)
+  - Loaded at build time via `build.rs` concatenation into `html-bundle/embedded_index.html`
+  - Vue 3 served via CDN bundle (00-vue.min.js)
+  - Modular pages: Status, Communication, UART, Network, Routing, Toolbox, System
   - Modal dialogs for help, data format reference, system info
+  - No npm build needed, templates written as JS/Vue syntax
 - Auth: Session tokens (32 hex chars, max 4 concurrent, 24h TTL), rate limiting
 
 **Request Handler Flow (Summary):**
 
 | Method | Endpoint | Handler | Purpose |
 |--------|----------|---------|---------|
-| GET | / | - | Embedded SPA (925 LOC vanilla JS) |
+| GET | / | - | Embedded Vue 3 SPA (built from 10 JS modules) |
 | GET | /style.css | - | External CSS stylesheet (asset) |
-| GET | /modals/*.html | - | Modal dialog templates (asset) |
-| GET | /modals/*.js | - | Modal injection system (asset) |
 | POST | /api/login | SessionManager | Authenticate with password, get token |
 | GET | /api/session | SessionManager | Check session validity |
 | GET/POST | /api/wifi/* | wifi module | WiFi modes, scanning, status |
@@ -158,7 +158,7 @@
 - Supports command input (JSON) from client
 - Max 32 concurrent connections (configurable)
 
-### 1.5 WiFi Management (web/wifi.rs - 209 lines)
+### 1.5 WiFi Management (web_api/wifi.rs - 209 lines)
 
 **Phase 7 Feature: WiFi 4-Mode Configuration**
 
@@ -196,7 +196,7 @@
 
 ---
 
-### 1.6 Network Configuration (web/netcfg.rs - 350 lines)
+### 1.6 Network Configuration (web_api/netcfg.rs - 350 lines)
 
 **Phase 7 Feature: Complete Network Stack Management**
 
@@ -238,7 +238,7 @@
 
 ---
 
-### 1.7 System Maintenance (web/maintenance.rs - 362 lines)
+### 1.7 System Maintenance (web_api/maintenance.rs - 362 lines)
 
 **Phase 7 Feature: Firmware Management & Config Backup**
 

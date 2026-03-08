@@ -1,7 +1,7 @@
 //! Syslog viewer: stream `logread -f -e ugate` qua WebSocket
 //! Chạy song song với toolbox (không block ping/traceroute)
 
-use crate::web::ws::WsManager;
+use crate::web_api::ws::WsManager;
 use std::io::BufRead;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -48,7 +48,7 @@ pub fn handle_start(ws_manager: &Arc<WsManager>) -> super::Resp {
         stream_syslog(&broadcast_tx);
     });
 
-    crate::web::json_resp(r#"{"ok":true}"#)
+    crate::web_api::json_resp(r#"{"ok":true}"#)
 }
 
 /// POST /api/syslog/stop — kill logread process
@@ -58,7 +58,7 @@ pub fn handle_stop() -> super::Resp {
     if pid > 0 {
         unsafe { libc::kill(pid as i32, libc::SIGTERM); }
     }
-    crate::web::json_resp(r#"{"ok":true}"#)
+    crate::web_api::json_resp(r#"{"ok":true}"#)
 }
 
 /// Parse syslog line: extract time + message, detect level
@@ -121,7 +121,7 @@ fn stream_syslog(broadcast_tx: &tokio::sync::broadcast::Sender<String>) {
         Err(e) => {
             let msg = format!(
                 r#"{{"type":"syslog","line":"Error: {}","level":"err"}}"#,
-                crate::web::json_escape(&e.to_string())
+                crate::web_api::json_escape(&e.to_string())
             );
             let _ = broadcast_tx.send(msg);
             RUNNING.store(false, Ordering::SeqCst);
@@ -147,7 +147,7 @@ fn stream_syslog(broadcast_tx: &tokio::sync::broadcast::Sender<String>) {
                     let formatted = format!("{} {}", time, message);
                     let msg = format!(
                         r#"{{"type":"syslog","line":"{}","level":"{}"}}"#,
-                        crate::web::json_escape(&formatted),
+                        crate::web_api::json_escape(&formatted),
                         level
                     );
                     let _ = broadcast_tx.send(msg);

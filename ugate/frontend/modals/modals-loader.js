@@ -1,5 +1,5 @@
 // Modal loader — fetch HTML templates từ server, inject dynamic data
-// Dùng chung h(), S từ embedded_index.html (global scope)
+// Dùng chung store (Vue reactive) từ app JS (global scope)
 
 function openModal(id, title, url, onLoaded) {
   var existing = document.getElementById(id);
@@ -31,7 +31,7 @@ function openModal(id, title, url, onLoaded) {
 // --- Data Wrap Help ---
 function showDataWrapHelp() {
   openModal('wrap-modal', 'Data Wrap', '/modals/help-data-wrap-format', function(body) {
-    var dn = S.config ? S.config.general.device_name : 'ugate';
+    var dn = store.config ? store.config.general.device_name : 'ugate';
     var ts = Math.floor(Date.now() / 1000);
     var sample = JSON.stringify({device_name: dn, timestamp: ts, data: 'send from mcu'}, null, 2);
     var el = body.querySelector('#wrap-mqtt-sample');

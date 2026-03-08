@@ -2,7 +2,7 @@
 //! Backup/restore config, factory reset, restart, reload, version, upgrade
 
 use crate::config::{AppState, Config};
-use crate::web::{json_err, json_escape, json_resp, Resp};
+use crate::web_api::{json_err, json_escape, json_resp, Resp};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -18,7 +18,7 @@ pub fn handle_get_upgrade_url() -> Resp {
 
 /// POST /api/upgrade/url — lưu upgrade URL vào UCI
 pub fn handle_set_upgrade_url(body: &str) -> Resp {
-    let url = crate::web::jval(body, "url").unwrap_or_default();
+    let url = crate::web_api::jval(body, "url").unwrap_or_default();
     let _ = crate::uci::Uci::set("ugate.@upgrade[0].url", &url);
     let _ = crate::uci::Uci::commit("ugate");
     log::info!("[Maint] Upgrade URL set: {}", url);
@@ -194,10 +194,10 @@ pub fn handle_upgrade_check() -> Resp {
     };
 
     // Parse manifest JSON thủ công
-    let latest = crate::web::jval(&manifest, "version").unwrap_or_default();
-    let changelog = crate::web::jval(&manifest, "changelog").unwrap_or_default();
-    let size = crate::web::jval(&manifest, "size").unwrap_or_default();
-    let ipk_url = crate::web::jval(&manifest, "url").unwrap_or_default();
+    let latest = crate::web_api::jval(&manifest, "version").unwrap_or_default();
+    let changelog = crate::web_api::jval(&manifest, "changelog").unwrap_or_default();
+    let size = crate::web_api::jval(&manifest, "size").unwrap_or_default();
+    let ipk_url = crate::web_api::jval(&manifest, "url").unwrap_or_default();
 
     let current = env!("CARGO_PKG_VERSION");
     let has_update = version_gt(&latest, current);
@@ -235,9 +235,9 @@ pub fn handle_upgrade_remote() -> Resp {
         }
     };
 
-    let ipk_url = crate::web::jval(&manifest, "url").unwrap_or_default();
-    let expected_checksum = crate::web::jval(&manifest, "checksum").unwrap_or_default();
-    let version = crate::web::jval(&manifest, "version").unwrap_or_default();
+    let ipk_url = crate::web_api::jval(&manifest, "url").unwrap_or_default();
+    let expected_checksum = crate::web_api::jval(&manifest, "checksum").unwrap_or_default();
+    let version = crate::web_api::jval(&manifest, "version").unwrap_or_default();
 
     if ipk_url.is_empty() {
         UPGRADING.store(false, Ordering::SeqCst);
